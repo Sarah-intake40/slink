@@ -180,8 +180,9 @@ export const markAllNotificationsRead = (userId) => supabase.from('notifications
 export const DEFAULT_STATUSES = [
   { name: 'To Do',       color: '#87909e', type: 'todo',   sort: 0 },
   { name: 'In Progress', color: '#4f86ff', type: 'active', sort: 1 },
-  { name: 'Review',      color: '#f9a825', type: 'active', sort: 2 },
-  { name: 'Complete',    color: '#22c55e', type: 'done',   sort: 3 },
+  { name: 'Blocker',     color: '#e5484d', type: 'active', sort: 2 },
+  { name: 'Review',      color: '#f9a825', type: 'active', sort: 3 },
+  { name: 'Complete',    color: '#22c55e', type: 'done',   sort: 4 },
 ]
 
 export async function seedSpaceStatuses(spaceId) {

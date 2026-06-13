@@ -45,7 +45,9 @@ svg{display:block}
 /* ---------- sidebar ---------- */
 .sidebar{width:260px;flex-shrink:0;background:var(--sidebar);border-right:1px solid var(--line);
   display:flex;flex-direction:column;padding:12px 8px;gap:4px;position:sticky;top:0;height:100vh;overflow-y:auto}
-.side-ws{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px}
+.side-ws{display:flex;align-items:center;gap:10px;padding:8px 10px;margin-bottom:6px;width:100%;text-align:left;border-radius:9px}
+.side-ws:hover{background:var(--hover)}
+.side-ws .ws-name{font-size:17px;font-weight:800}
 .ws-badge{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:#fff;font-weight:800;font-size:15px;text-transform:uppercase}
 .ws-name{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .side-nav{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:8px 10px;border-radius:8px;font-weight:600;font-size:13.5px;color:var(--ink2)}
@@ -56,6 +58,7 @@ svg{display:block}
   font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;margin-top:4px}
 .mini{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--mut);font-size:14px;line-height:1}
 .mini:hover{background:var(--line);color:var(--ink)}
+.mini:disabled{opacity:.3;cursor:default;background:none}
 .side-tree{display:flex;flex-direction:column;gap:1px}
 .space-row{display:flex;align-items:center;gap:2px;border-radius:7px}
 .space-row:hover{background:var(--hover)}

@@ -4,6 +4,7 @@ import * as api from '../api'
 import { buildNotifs } from '../notifications'
 import Modal from './Modal'
 import { PRIORITIES, Avatar, todayISO, uid, fmtDuration } from './Bits'
+import { playDone } from '../sound'
 
 export default function TaskModal({ task, listId, statuses, members, fields = [], allTasks, onClose, onSaved, reload }) {
   const { user } = useAuth()
@@ -139,6 +140,7 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     // recurring: completing a repeating task spawns its next instance
     const wasDone = (() => { const ty = statuses.find((s) => s.id === task.status_id)?.type; return ty === 'done' || ty === 'closed' })()
     const nowDone = st?.type === 'done' || st?.type === 'closed'
+    if (nowDone && !wasDone) playDone()                                // completion chime
     if (!isNew && recRule && nowDone && !wasDone) {
       await api.rollRecurringTask({
         list_id: listId, name: f.name.trim(), description: f.description || null, priority: f.priority || null,

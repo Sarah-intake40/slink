@@ -64,10 +64,10 @@ export default function Sidebar() {
 
   return (
     <aside className="sidebar">
-      <div className="side-ws">
-        <span className="ws-badge" style={{ background: ws?.color || '#7B68EE' }}>{(ws?.name || 'W')[0]}</span>
-        <span className="ws-name">{ws?.name || 'Workspace'}</span>
-      </div>
+      <button className="side-ws" onClick={() => nav('/')} title={ws?.name || 'Workspace'}>
+        <span className="ws-badge" style={{ background: 'linear-gradient(135deg,var(--accent),#9b8bff)' }}>S</span>
+        <span className="ws-name"><b style={{ color: 'var(--accent)' }}>Link</b></span>
+      </button>
 
       <button className={'side-nav' + (loc.pathname === '/' ? ' on' : '')} onClick={() => nav('/')}>🏠 Home</button>
       <button className={'side-nav' + (loc.pathname === '/inbox' ? ' on' : '')} onClick={() => nav('/inbox')}>

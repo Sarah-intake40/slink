@@ -11,14 +11,24 @@ export default function CustomizeModal({ space, statuses, fields, onClose, onSav
   const [fls, setFls] = useState(() => fields.map((f) => ({ ...f, optionsText: (f.options || []).join(', ') })))
   const [busy, setBusy] = useState(false)
 
+  // move an item up/down within a list (reorder, Jira-style)
+  const move = (arr, set) => (i, dir) => {
+    const j = i + dir
+    if (j < 0 || j >= arr.length) return
+    const next = arr.slice()
+    ;[next[i], next[j]] = [next[j], next[i]]
+    set(next)
+  }
   // statuses helpers
   const setS = (i, k, v) => setSts(sts.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
   const addS = () => setSts([...sts, { _new: true, name: '', color: '#87909e', type: 'active', sort: sts.length }])
   const dropS = (i) => setSts(sts.filter((_, j) => j !== i))
+  const moveS = move(sts, setSts)
   // fields helpers
   const setF = (i, k, v) => setFls(fls.map((r, j) => (j === i ? { ...r, [k]: v } : r)))
   const addF = () => setFls([...fls, { _new: true, name: '', type: 'text', optionsText: '', sort: fls.length }])
   const dropF = (i) => setFls(fls.filter((_, j) => j !== i))
+  const moveF = move(fls, setFls)
 
   async function save() {
     setBusy(true)
@@ -67,6 +77,8 @@ export default function CustomizeModal({ space, statuses, fields, onClose, onSav
                   style={{ flex: '0 0 130px', border: '1px solid var(--line2)', borderRadius: 9, padding: '8px 11px' }}>
                   {STATUS_TYPES.map((t) => <option key={t.k} value={t.k}>{t.n}</option>)}
                 </select>
+                <button className="mini" title="Move up" disabled={i === 0} onClick={() => moveS(i, -1)}>↑</button>
+                <button className="mini" title="Move down" disabled={i === sts.length - 1} onClick={() => moveS(i, 1)}>↓</button>
                 <button className="x" style={{ width: 30, height: 30 }} onClick={() => dropS(i)}>×</button>
               </div>
             ))}
@@ -91,6 +103,8 @@ export default function CustomizeModal({ space, statuses, fields, onClose, onSav
                   ? <input value={r.optionsText} onChange={(e) => setF(i, 'optionsText', e.target.value)} placeholder="Option A, Option B"
                       style={{ flex: '1 1 150px', border: '1px solid var(--line2)', borderRadius: 9, padding: '8px 11px' }} />
                   : <span style={{ flex: '1 1 150px', color: 'var(--mut2)', fontSize: 12 }} />}
+                <button className="mini" title="Move up" disabled={i === 0} onClick={() => moveF(i, -1)}>↑</button>
+                <button className="mini" title="Move down" disabled={i === fls.length - 1} onClick={() => moveF(i, 1)}>↓</button>
                 <button className="x" style={{ width: 30, height: 30 }} onClick={() => dropF(i)}>×</button>
               </div>
             ))}

@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { useAuth } from '../auth'
 import { useWorkspace } from '../workspace'
 import * as api from '../api'
@@ -25,7 +26,8 @@ const STR = {
   invoices: { en: 'Invoices', ar: 'الفواتير' }, no: { en: 'No.', ar: 'رقم' },
   currentWorks: { en: 'Current works', ar: 'أعمال المستخلص' }, totalDue: { en: 'Total due', ar: 'الإجمالي المستحق' },
   spendByCat: { en: 'Spend by category', ar: 'المصروفات حسب التصنيف' }, none: { en: 'No data.', ar: 'لا توجد بيانات.' },
-  printBtn: { en: 'Print / Save PDF', ar: 'طباعة / حفظ PDF' }, reportType: { en: 'Report type', ar: 'نوع التقرير' },
+  printBtn: { en: 'Print / Save PDF', ar: 'طباعة / حفظ PDF' }, excelBtn: { en: 'Download Excel', ar: 'تنزيل Excel' },
+  reportType: { en: 'Report type', ar: 'نوع التقرير' }, reportTitle: { en: 'Report title', ar: 'عنوان التقرير' },
   language: { en: 'Language', ar: 'اللغة' }, total: { en: 'Total', ar: 'الإجمالي' }, unassigned: { en: 'Unassigned', ar: 'غير مُسند' },
   introPh: { en: 'Write an introduction / notes to appear at the top of the report…', ar: 'اكتب مقدمة أو ملاحظات تظهر في بداية التقرير…' },
 }
@@ -38,6 +40,7 @@ export default function ReportsPage() {
   const [type, setType] = useState('daily')
   const [lang, setLang] = useState('en')
   const [intro, setIntro] = useState('')
+  const [customTitle, setCustomTitle] = useState('')   // user-overridable report title
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const t = (k) => STR[k]?.[lang] ?? k
@@ -83,7 +86,7 @@ export default function ReportsPage() {
   const today = todayISO()
   const overdue = data.tasks.filter((x) => x.due_date && String(x.due_date).slice(0, 10) < today && !isDone(x.status_id)).length
 
-  const title = t(type)
+  const title = customTitle.trim() || t(type)
 
   const TasksTable = () => (
     <table className="rep-tbl"><thead><tr>
@@ -142,12 +145,75 @@ export default function ReportsPage() {
     )
   }
 
+  // Export the report to .xlsx (one sheet per section). Works for EN + AR (RTL workbook for Arabic).
+  function exportExcel() {
+    const wb = XLSX.utils.book_new()
+    if (lang === 'ar') wb.Workbook = { Views: [{ RTL: true }] }
+    const safeSheet = (s) => (s || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').slice(0, 31)
+    const add = (name, aoa) => XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), safeSheet(name))
+
+    const meta = [
+      [title],
+      [t('projectLabel'), ws?.name || ''],
+      [t('date'), fmtDate(today)],
+      [t('preparedBy'), profile?.full_name || ''],
+    ]
+    if (intro.trim()) meta.push([t('intro'), intro.trim()])
+
+    if (type === 'daily' || type === 'project') {
+      add(t('summary'), [
+        ...meta, [],
+        [t('totalTasks'), total], [t('completed'), done], [t('inProgress'), active],
+        [t('overdue'), overdue], [t('progress'), prog + '%'],
+      ])
+      add(t('tasks'), [
+        [t('task'), t('list'), t('status'), t('assignee'), t('start'), t('due')],
+        ...data.tasks.map((x) => [
+          x.name, listOf(x.list_id)?.name || '', statusOf(x.status_id)?.name || '',
+          x.assignees.map(nameOf).filter(Boolean).join(', ') || t('unassigned'),
+          fmtDate(x.start_date) || '', fmtDate(x.due_date) || '',
+        ]),
+      ])
+    }
+
+    if ((type === 'budget' || type === 'project') && fin) {
+      const totalSpent = data.expenses.reduce((a, e) => a + num(e.amount), 0)
+      add(t('financial'), [
+        ...(type === 'budget' ? [...meta, []] : []),
+        [t('budgetL'), fin.budget], [t('spent'), fin.spent], [t('remaining'), fin.remaining],
+        [t('claimed'), fin.claimed], [t('received'), fin.received], [t('outstanding'), fin.outstanding],
+      ])
+      add(t('spendByCat'), [
+        [t('category'), t('amount'), '%'],
+        ...data.cats.map((c) => {
+          const sp = data.expenses.filter((e) => e.category_id === c.id).reduce((a, e) => a + num(e.amount), 0)
+          return [c.name, sp, (totalSpent ? Math.round(sp / totalSpent * 100) : 0) + '%']
+        }),
+      ])
+      add(t('expenses'), [
+        [t('date'), t('category'), t('description'), t('amount')],
+        ...data.expenses.map((e) => [fmtDate(e.spent_on), catOf(e.category_id)?.name || '', e.description || '', num(e.amount)]),
+        [t('total'), '', '', totalSpent],
+      ])
+      add(t('invoices'), [
+        [t('no'), t('date'), t('currentWorks'), t('totalDue'), t('status')],
+        ...data.invoices.map((i) => { const a = invoiceAmounts(i), s = invStatus(i.status); return [i.seq, fmtDate(i.invoice_date), a.current, a.totalDue, lang === 'ar' ? s.ar : s.en] }),
+      ])
+    }
+
+    const safeFile = (s) => (s || 'report').replace(/[\\/:*?"<>|]/g, '').slice(0, 80)
+    XLSX.writeFile(wb, `${safeFile(ws?.name)} - ${safeFile(title)}.xlsx`)
+  }
+
   return (
     <>
       <div className="rep-controls">
         <div className="list-head">
           <div><div className="crumb">Reports · التقارير</div><h2>Reports</h2></div>
-          <button className="btn" style={{ marginLeft: 'auto' }} onClick={() => window.print()}>🖨 {t('printBtn')}</button>
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button className="btn ghost" onClick={exportExcel}>⬇ {t('excelBtn')}</button>
+            <button className="btn" onClick={() => window.print()}>🖨 {t('printBtn')}</button>
+          </div>
         </div>
         <div className="vc" style={{ borderBottom: 'none' }}>
           <label className="vc-ctl"><span>{t('reportType')}</span>
@@ -160,6 +226,10 @@ export default function ReportsPage() {
             <select value={lang} onChange={(e) => setLang(e.target.value)}>
               <option value="en">English</option><option value="ar">العربية</option>
             </select></label>
+          <label className="vc-ctl" style={{ flex: '1 1 220px' }}><span>{t('reportTitle')}</span>
+            <input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder={t(type)}
+              dir={lang === 'ar' ? 'rtl' : 'ltr'}
+              style={{ flex: 1, minWidth: 0, border: '1px solid var(--line2)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--ink)', background: 'var(--card)' }} /></label>
         </div>
         <textarea className="rep-intro-input" rows={3} value={intro} onChange={(e) => setIntro(e.target.value)} placeholder={t('introPh')} dir={lang === 'ar' ? 'rtl' : 'ltr'} />
       </div>

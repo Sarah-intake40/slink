@@ -10,6 +10,7 @@ import ViewControls from './ViewControls'
 import TaskModal from './TaskModal'
 import CustomizeModal from './CustomizeModal'
 import { PRIORITIES } from './Bits'
+import { playDone } from '../sound'
 
 const VIEWS = [['list', 'List'], ['board', 'Board'], ['calendar', 'Calendar'], ['table', 'Table']]
 const PR_RANK = { urgent: 0, high: 1, normal: 2, low: 3 }
@@ -115,8 +116,10 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     setRows((rs) => rs.map((x) => x.id === taskId ? { ...x, status_id } : x))
     await api.updateTask(taskId, { status_id, completed_at: nowDone ? new Date().toISOString() : null })
     await api.logActivity([{ task_id: taskId, actor_id: user.id, field: 'status', from_val: stName(t.status_id), to_val: stName(status_id) }])
-    // spawn the next instance when a recurring task is completed
-    if (nowDone && !isDoneType(t.status_id) && t.recurrence?.freq) { await api.rollRecurringTask(t, statuses); reload && reload() }
+    if (nowDone && !isDoneType(t.status_id)) {
+      playDone()                                                       // completion chime
+      if (t.recurrence?.freq) { await api.rollRecurringTask(t, statuses); reload && reload() }  // spawn next instance
+    }
   }
 
   // ----- bulk actions on selected tasks -----
@@ -129,6 +132,7 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     if (!status_id) return
     const st = statuses.find((s) => s.id === status_id)
     const ids = selIds(), done = st?.type === 'done' || st?.type === 'closed'
+    if (done) playDone()                                               // completion chime (once for the batch)
     setRows((rs) => rs.map((x) => selected.has(x.id) ? { ...x, status_id } : x))
     await Promise.all(ids.map((id) => {
       const t = rows.find((x) => x.id === id)
