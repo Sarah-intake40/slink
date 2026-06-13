@@ -8,6 +8,20 @@ import { money, num } from '../components/Bits'
 const PALETTE = ['#7B68EE', '#4f86ff', '#22c55e', '#f9a825', '#e5484d', '#0891b2', '#db2777', '#6366f1']
 const sar2 = (v) => (Number(v) || 0).toLocaleString('en-US', { maximumFractionDigits: 0 })
 
+// Guarantee every slice gets a DISTINCT color: keep a color if unused, otherwise
+// pull the next free palette color, then fall back to evenly-spaced hues.
+function distinctColors(items) {
+  const used = new Set()
+  let pi = 0
+  const nextFree = () => { while (pi < PALETTE.length && used.has(PALETTE[pi])) pi++; return pi < PALETTE.length ? PALETTE[pi++] : null }
+  return items.map((d, i) => {
+    let color = d.color
+    if (!color || used.has(color)) color = nextFree() || `hsl(${(i * 67) % 360} 62% 55%)`
+    used.add(color)
+    return { ...d, color }
+  })
+}
+
 export default function DashboardPage() {
   const { ws } = useWorkspace()
   const [cats, setCats] = useState([])
@@ -43,7 +57,7 @@ export default function DashboardPage() {
   const spendByCat = useMemo(() => {
     const m = new Map()
     expenses.forEach((e) => { const c = cats.find((x) => x.id === e.category_id); const k = c?.name || 'Uncategorized'; const g = m.get(k) || { label: k, color: c?.color || '#9aa3b2', value: 0 }; g.value += num(e.amount); m.set(k, g) })
-    return [...m.values()].sort((a, b) => b.value - a.value)
+    return distinctColors([...m.values()].sort((a, b) => b.value - a.value))
   }, [expenses, cats])
 
   const invByStatus = useMemo(() => INVOICE_STATUS.map((s) => ({
@@ -53,7 +67,7 @@ export default function DashboardPage() {
   const monthly = useMemo(() => monthlyData(expenses, invoices), [expenses, invoices])
   const cmpSeries = CMP_SERIES.filter((s) => cmpSel.includes(s.k)).map((s) => ({ name: s.name, color: s.color, values: monthly.labels.map((m) => monthly.data[s.k][m] || 0) }))
 
-  const dynData = useMemo(() => buildDynamic(metric, groupBy, { expenses, invoices, cats }), [metric, groupBy, expenses, invoices, cats])
+  const dynData = useMemo(() => distinctColors(buildDynamic(metric, groupBy, { expenses, invoices, cats })), [metric, groupBy, expenses, invoices, cats])
   const groupOptions = metric === 'spend' ? [['category', 'Category'], ['month', 'Month']] : [['status', 'Status'], ['month', 'Month']]
   useEffect(() => { if (!groupOptions.some(([k]) => k === groupBy)) setGroupBy(groupOptions[0][0]) }, [metric]) // eslint-disable-line
 

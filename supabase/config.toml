@@ -1,0 +1,13 @@
+# Supabase CLI config — only the bits S Link needs are set here.
+# Full reference: https://supabase.com/docs/guides/cli/config
+# (If you deploy functions via the Dashboard editor instead of the CLI,
+#  set the same "Verify JWT" toggles there — this file is only read by the CLI.)
+
+# Forgot-password is invoked from the browser BEFORE the user is logged in,
+# so its CORS preflight carries no JWT. Disable verification so it's reachable.
+[functions.reset-password]
+verify_jwt = false
+
+# notify-email is triggered server-side by a Database Webhook, not the browser.
+[functions.notify-email]
+verify_jwt = true

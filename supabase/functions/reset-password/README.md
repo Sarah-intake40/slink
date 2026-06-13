@@ -21,6 +21,16 @@ name it **`reset-password`** → paste all of `index.ts` from this folder → **
 
 (CLI: `npx supabase functions deploy reset-password`.)
 
+### ⚠️ Turn OFF "Verify JWT" for this function — REQUIRED
+Forgot-password is called **before the user is logged in**, so the browser's CORS
+preflight (OPTIONS) carries no auth token. With JWT verification on, Supabase rejects
+that preflight and the browser shows **"Failed to send a request to the Edge Function"**.
+
+- **Dashboard:** Edge Functions → `reset-password` → **Settings/Details** → toggle
+  **Verify JWT = OFF**.
+- **CLI:** the included `supabase/config.toml` already sets `verify_jwt = false` for
+  `reset-password`, so `npx supabase functions deploy reset-password` applies it.
+
 ## 3. Secrets (already set if notify-email works)
 Edge Functions → **Secrets**. These are shared with `notify-email`:
 
@@ -46,6 +56,21 @@ Login page → **Forgot password?** → enter a registered email → email arriv
 with the new password.
 
 Debug via **Edge Functions → Logs** and **Brevo → Transactional → Logs**.
+
+## Troubleshooting
+
+**"Failed to send a request to the Edge Function"** (seen in the app):
+the browser couldn't reach the function. Check, in order:
+1. Is `reset-password` actually **deployed** on the prod project? (Edge Functions list.)
+2. Is **Verify JWT OFF** for it? (See step 2 — this is the most common cause in prod.)
+3. Is `APP_URL` set to your **prod** URL, and is that URL in **Auth → URL Configuration →
+   Redirect URLs**?
+Open the browser devtools **Network** tab → click the `reset-password` request → a `401`
+or a failed CORS preflight points to Verify JWT; a `404` means it isn't deployed.
+
+**Email never arrives** (but the app shows "check your inbox"): the function responds
+success even on unknown emails (anti-enumeration). Check **Edge Functions → Logs** and
+**Brevo → Logs** for the real outcome; verify `BREVO_API_KEY` / `EMAIL_FROM` are set.
 
 ### Notes
 - The function **always** responds success and never says whether an email is registered
