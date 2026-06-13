@@ -24,7 +24,7 @@ create table workspaces (
   name       text not null,
   color      text default '#7B68EE',
   budget     numeric default 0,            -- whole-project budget (construction)
-  created_by uuid references profiles(id),
+  created_by uuid references profiles(id) on delete set null,
   created_at timestamptz default now()
 );
 
@@ -94,8 +94,9 @@ create table tasks (
   custom      jsonb default '{}'::jsonb,
   checklist   jsonb default '[]'::jsonb,
   time_estimate int,                                      -- minutes
+  recurrence  jsonb,                                      -- repeat rule, e.g. {"freq":"weekly","interval":1}; null = no repeat
   sort        int default 0,
-  created_by  uuid references profiles(id),
+  created_by  uuid references profiles(id) on delete set null,
   completed_at timestamptz,
   created_at  timestamptz default now()
 );
@@ -109,7 +110,7 @@ create table task_assignees (
 create table task_comments (
   id         uuid primary key default gen_random_uuid(),
   task_id    uuid references tasks on delete cascade,
-  author     uuid references profiles(id),
+  author     uuid references profiles(id) on delete set null,
   body       text,
   created_at timestamptz default now()
 );

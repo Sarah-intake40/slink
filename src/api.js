@@ -55,6 +55,12 @@ export const getTasksInLists = (listIds) =>
   supabase.from('tasks').select(TASK_SELECT).in('list_id', listIds).order('sort').order('created_at')
 export const getSubtasks = (parentId) =>
   supabase.from('tasks').select(TASK_SELECT).eq('parent_id', parentId).order('created_at')
+// Global search: top-level tasks across the given lists whose name matches q.
+export const searchTasks = (listIds, q) =>
+  supabase.from('tasks').select('id, name, list_id, status_id, priority')
+    .in('list_id', listIds).is('parent_id', null)
+    .ilike('name', '%' + q.replace(/[%_]/g, (m) => '\\' + m) + '%')
+    .order('created_at', { ascending: false }).limit(20)
 export const createTask = (t) => supabase.from('tasks').insert(t).select(TASK_SELECT).single()
 export const updateTask = (id, t) => supabase.from('tasks').update(t).eq('id', id).select(TASK_SELECT).single()
 export const deleteTask = (id) => supabase.from('tasks').delete().eq('id', id)
@@ -62,6 +68,51 @@ export const deleteTask = (id) => supabase.from('tasks').delete().eq('id', id)
 export const setAssignees = async (taskId, userIds) => {
   await supabase.from('task_assignees').delete().eq('task_id', taskId)
   if (userIds.length) await supabase.from('task_assignees').insert(userIds.map((user_id) => ({ task_id: taskId, user_id })))
+}
+
+// ---------- recurring tasks ----------
+export const RECUR_FREQS = [
+  { k: 'daily', n: 'Daily' },
+  { k: 'weekly', n: 'Weekly' },
+  { k: 'monthly', n: 'Monthly' },
+  { k: 'yearly', n: 'Yearly' },
+]
+// Advance a YYYY-MM-DD date string by the recurrence rule; returns a new string (or null).
+export function nextDate(iso, freq, interval = 1) {
+  if (!iso) return null
+  const d = new Date(iso + 'T00:00:00')
+  const n = Math.max(1, Number(interval) || 1)
+  if (freq === 'daily') d.setDate(d.getDate() + n)
+  else if (freq === 'weekly') d.setDate(d.getDate() + 7 * n)
+  else if (freq === 'monthly') d.setMonth(d.getMonth() + n)
+  else if (freq === 'yearly') d.setFullYear(d.getFullYear() + n)
+  else return iso
+  return d.toISOString().slice(0, 10)
+}
+
+// When a recurring task is completed, spawn its next instance (dates advanced,
+// status reset to the first non-done status, checklist reset). Returns the new task or null.
+export async function rollRecurringTask(task, statuses) {
+  const rec = task?.recurrence
+  if (!rec || !rec.freq) return null
+  const open = statuses.find((s) => s.type !== 'done' && s.type !== 'closed') || statuses[0]
+  const { data } = await createTask({
+    list_id: task.list_id,
+    name: task.name,
+    description: task.description || null,
+    priority: task.priority || null,
+    status_id: open?.id || null,
+    start_date: nextDate(task.start_date, rec.freq, rec.interval),
+    due_date: nextDate(task.due_date, rec.freq, rec.interval),
+    tags: task.tags || [],
+    custom: task.custom || {},
+    checklist: (task.checklist || []).map((c) => ({ ...c, done: false })),
+    time_estimate: task.time_estimate || null,
+    recurrence: rec,
+    created_by: task.created_by || null,
+  })
+  if (data && task.assignees?.length) await setAssignees(data.id, task.assignees)
+  return data
 }
 
 // ---------- custom fields (per space) ----------

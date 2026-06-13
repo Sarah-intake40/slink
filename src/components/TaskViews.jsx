@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import * as api from '../api'
 import ListView from '../views/ListView'
@@ -8,6 +9,7 @@ import TableView from '../views/TableView'
 import ViewControls from './ViewControls'
 import TaskModal from './TaskModal'
 import CustomizeModal from './CustomizeModal'
+import { PRIORITIES } from './Bits'
 
 const VIEWS = [['list', 'List'], ['board', 'Board'], ['calendar', 'Calendar'], ['table', 'Table']]
 const PR_RANK = { urgent: 0, high: 1, normal: 2, low: 3 }
@@ -17,6 +19,30 @@ export const normTask = (t) => ({
   assignees: (t.task_assignees || []).map((a) => a.user_id),
   commentCount: t.task_comments?.[0]?.count || 0,
 })
+
+// Floating action bar shown when one or more tasks are selected.
+function BulkBar({ count, statuses, members, onStatus, onAssign, onPriority, onDelete, onClear }) {
+  return (
+    <div className="bulkbar">
+      <span className="bulkbar-count">{count} selected</span>
+      <select className="bulkbar-sel" value="" onChange={(e) => onStatus(e.target.value)}>
+        <option value="" disabled>Set status…</option>
+        {statuses.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+      </select>
+      <select className="bulkbar-sel" value="" onChange={(e) => onPriority(e.target.value || null)}>
+        <option value="" disabled>Set priority…</option>
+        {PRIORITIES.map((p) => <option key={p.k} value={p.k}>{p.n}</option>)}
+        <option value="">No priority</option>
+      </select>
+      <select className="bulkbar-sel" value="" onChange={(e) => onAssign(e.target.value)}>
+        <option value="" disabled>Assign to…</option>
+        {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+      </select>
+      <button className="btn danger sm" onClick={onDelete}>🗑 Delete</button>
+      <button className="bulkbar-x" onClick={onClear} title="Clear selection">✕</button>
+    </div>
+  )
+}
 
 export default function TaskViews({ tasks, statuses, fields, members, lists = [], defaultListId, space, reload, onConfigChanged, header }) {
   const { user } = useAuth()
@@ -31,8 +57,30 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
   const [fPriority, setFPriority] = useState('')
   const [sortBy, setSortBy] = useState('manual')
   const [groupBy, setGroupBy] = useState('status')
+  const [selected, setSelected] = useState(() => new Set())
 
   useEffect(() => { setRows((tasks || []).map(normTask)) }, [tasks])
+  // drop selections for tasks that no longer exist after a reload
+  useEffect(() => {
+    setSelected((sel) => {
+      if (!sel.size) return sel
+      const ids = new Set(rows.map((r) => r.id))
+      const next = new Set([...sel].filter((id) => ids.has(id)))
+      return next.size === sel.size ? sel : next
+    })
+  }, [rows])
+
+  // Deep-link: /list/:id?task=<id> opens that task (e.g. from global search).
+  const [params, setParams] = useSearchParams()
+  useEffect(() => {
+    const tid = params.get('task')
+    if (!tid) return
+    const t = rows.find((x) => x.id === tid)
+    if (t) {
+      setEditing(t)
+      const next = new URLSearchParams(params); next.delete('task'); setParams(next, { replace: true })
+    }
+  }, [params, rows, setParams])
 
   const defaultStatus = statuses[0]?.id || null
   const stName = (id) => statuses.find((s) => s.id === id)?.name || '—'
@@ -58,14 +106,61 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     if (data) await api.logActivity([{ task_id: data.id, actor_id: user.id, field: 'created', to_val: name.trim() }])
     reload && reload()
   }
+  const isDoneType = (id) => { const ty = statuses.find((s) => s.id === id)?.type; return ty === 'done' || ty === 'closed' }
   async function changeStatus(taskId, status_id) {
     const t = rows.find((x) => x.id === taskId)
     if (!t || t.status_id === status_id) return
     const st = statuses.find((s) => s.id === status_id)
+    const nowDone = st?.type === 'done' || st?.type === 'closed'
     setRows((rs) => rs.map((x) => x.id === taskId ? { ...x, status_id } : x))
-    await api.updateTask(taskId, { status_id, completed_at: st?.type === 'done' || st?.type === 'closed' ? new Date().toISOString() : null })
+    await api.updateTask(taskId, { status_id, completed_at: nowDone ? new Date().toISOString() : null })
     await api.logActivity([{ task_id: taskId, actor_id: user.id, field: 'status', from_val: stName(t.status_id), to_val: stName(status_id) }])
+    // spawn the next instance when a recurring task is completed
+    if (nowDone && !isDoneType(t.status_id) && t.recurrence?.freq) { await api.rollRecurringTask(t, statuses); reload && reload() }
   }
+
+  // ----- bulk actions on selected tasks -----
+  const toggleSelect = (id) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  const selectMany = (ids, on) => setSelected((s) => { const n = new Set(s); ids.forEach((id) => on ? n.add(id) : n.delete(id)); return n })
+  const clearSel = () => setSelected(new Set())
+  const selIds = () => [...selected]
+
+  async function bulkStatus(status_id) {
+    if (!status_id) return
+    const st = statuses.find((s) => s.id === status_id)
+    const ids = selIds(), done = st?.type === 'done' || st?.type === 'closed'
+    setRows((rs) => rs.map((x) => selected.has(x.id) ? { ...x, status_id } : x))
+    await Promise.all(ids.map((id) => {
+      const t = rows.find((x) => x.id === id)
+      return api.updateTask(id, { status_id, completed_at: done ? new Date().toISOString() : null })
+        .then(() => api.logActivity([{ task_id: id, actor_id: user.id, field: 'status', from_val: stName(t?.status_id), to_val: stName(status_id) }]))
+        .then(() => (done && !isDoneType(t?.status_id) && t?.recurrence?.freq) ? api.rollRecurringTask(t, statuses) : null)
+    }))
+    clearSel(); reload && reload()
+  }
+  async function bulkAssign(userId) {
+    if (!userId) return
+    const ids = selIds()
+    await Promise.all(ids.map((id) => {
+      const t = rows.find((x) => x.id === id); if (!t) return Promise.resolve()
+      return api.setAssignees(id, [...new Set([...t.assignees, userId])])
+    }))
+    clearSel(); reload && reload()
+  }
+  async function bulkPriority(priority) {
+    const ids = selIds()
+    setRows((rs) => rs.map((x) => selected.has(x.id) ? { ...x, priority } : x))
+    await Promise.all(ids.map((id) => api.updateTask(id, { priority })))
+    clearSel(); reload && reload()
+  }
+  async function bulkDelete() {
+    const ids = selIds()
+    if (!ids.length || !window.confirm(`Delete ${ids.length} task${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return
+    await Promise.all(ids.map((id) => api.deleteTask(id)))
+    clearSel(); reload && reload()
+  }
+
+  const selectProps = { selected, onToggleSelect: toggleSelect, onSelectMany: selectMany }
 
   return (
     <>
@@ -85,7 +180,7 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
         sortBy={sortBy} setSortBy={setSortBy} groupBy={groupBy} setGroupBy={setGroupBy} />
 
       {view === 'list' && <ListView tasks={visible} statuses={statuses} members={members} groupBy={groupBy}
-        listMap={listMap} showList={multiList}
+        listMap={listMap} showList={multiList} {...selectProps}
         onOpen={setEditing} onQuickAdd={quickAdd} onChangeStatus={changeStatus} />}
       {view === 'board' && <BoardView tasks={visible} statuses={statuses} members={members}
         listMap={listMap} showList={multiList}
@@ -93,7 +188,13 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
       {view === 'calendar' && <CalendarView tasks={visible} statuses={statuses}
         onOpen={setEditing} onCreateOn={(d) => setEditing({ list_id: defaultListId, status_id: defaultStatus, due_date: d })} />}
       {view === 'table' && <TableView tasks={visible} statuses={statuses} members={members} fields={fields}
-        listMap={listMap} showList={multiList} onOpen={setEditing} />}
+        listMap={listMap} showList={multiList} {...selectProps} onOpen={setEditing} />}
+
+      {selected.size > 0 && (
+        <BulkBar count={selected.size} statuses={statuses} members={members}
+          onStatus={bulkStatus} onAssign={bulkAssign} onPriority={bulkPriority}
+          onDelete={bulkDelete} onClear={clearSel} />
+      )}
 
       {editing && (
         <TaskModal task={editing} listId={editing.list_id || defaultListId} statuses={statuses} members={members} fields={fields}

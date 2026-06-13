@@ -63,12 +63,14 @@ export function MultiSeriesChart({ labels, series, mode = 'bar', height = 260, f
         </g>) })}
 
       {mode === 'bar' && series.map((s, si) => {
-        const bw = (slotW * 0.7) / series.length
+        const F = 0.42                                       // fraction of each slot used by the bar cluster
+        const bw = Math.min((slotW * F) / series.length, 22) // …but never fatter than 22px per bar
+        const cluster = bw * series.length
         return labels.map((_, i) => {
           const v = s.values[i] || 0
-          const x = P.l + i * slotW + slotW * 0.15 + si * bw
+          const x = P.l + i * slotW + (slotW - cluster) / 2 + si * bw   // center the cluster in its slot
           const h = (v / maxY) * ih
-          return <rect key={s.name + i} x={x} y={P.t + ih - h} width={Math.max(1, bw - 2)} height={h} rx="2" fill={s.color}><title>{`${s.name} · ${labels[i]}: ${fmt(v)}`}</title></rect>
+          return <rect key={s.name + i} x={x} y={P.t + ih - h} width={Math.max(2, bw - 3)} height={h} rx="2" fill={s.color}><title>{`${s.name} · ${labels[i]}: ${fmt(v)}`}</title></rect>
         })
       })}
 

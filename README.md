@@ -1,8 +1,8 @@
-# S Link — Construction Project Management
+# S Link — Work Management + Construction Finance
 
-A construction-focused project & task manager: per-project Kanban boards, timeline (Gantt), calendar, **category-based cost control**, RFIs / submittals / inspections / punch lists / daily logs / issues, drawing & file storage, and PDF + Excel status reports — with role-based access for **Project Managers, Site Engineers, Subcontractors and Clients**.
+A hybrid app (v2): a **ClickUp-style work manager** — Workspace → Space → Folder → List → Task hierarchy, custom per-space statuses & fields, multi-assignees, priorities, dates, tags, subtasks, dependencies, watchers, comments, **recurring tasks**, and List / Board / Calendar / Table views with filter / sort / group, **global Cmd-K search**, **bulk actions**, realtime notifications, and **light + dark themes** — fused with a **construction finance suite**: category-based cost control with an expense calculator, bilingual (AR/EN) payment certificates (مستخلصات) with retention / advance / VAT, finance dashboards, and print-to-PDF reports.
 
-Built to run **free for a year** on the free tiers of **Supabase** (database + auth + file storage) and **Netlify** or **Cloudflare Pages** (static hosting).
+Built to run **free** on the free tiers of **Supabase** (database + auth + storage) and **Netlify** or **Cloudflare Pages** (static hosting).
 
 `© copyrights a7mdabdelsalam`
 
@@ -15,15 +15,14 @@ Built to run **free for a year** on the free tiers of **Supabase** (database + a
 
 ---
 
-## Roles & permissions (already enforced in the database)
-| Role | Can do |
-|---|---|
-| **Project Manager** (admin) | Everything: create/edit/delete projects, set budgets, manage users & access, all tasks/records/costs |
-| **Site Engineer** | Create/edit tasks, records, **log costs**, upload drawings — on projects they're added to |
-| **Subcontractor** | See assigned work, update their own tasks, comment, upload files |
-| **Client** | View-only: dashboard, progress & reports |
+## Access model (v2)
 
-> The **first person to sign up becomes the Project Manager.** Everyone after starts as Site Engineer; the PM changes roles and project access from the **Team** page.
+The first person to sign up bootstraps a **Workspace** (becoming its owner). Anyone who is a member of a
+workspace can currently read and write everything in it — row-level security (RLS) enforces *workspace
+membership*, not fine-grained roles. The `owner / admin / member / guest` roles exist in the schema; per-role
+restrictions and private/guest spaces are a planned refinement (not yet enforced in the UI).
+
+> Migrating from the construction-only v1? Its PM / Engineer / Sub / Client role model lives in `legacy_v1/`.
 
 ---
 
@@ -101,16 +100,22 @@ Supabase → **Authentication → URL Configuration** → set **Site URL** to yo
 ## Project structure
 ```
 slink/
-├─ supabase/schema.sql      ← run this in Supabase SQL Editor
+├─ supabase/
+│  ├─ schema.sql            ← run this first in the Supabase SQL Editor (full schema)
+│  └─ migration_*.sql       ← idempotent add-ons; run any you haven't (e.g. migration_recurring.sql for repeats)
 ├─ src/
-│  ├─ api.js                ← all database calls
-│  ├─ auth.jsx              ← session + role
-│  ├─ pages/                ← Login, Dashboard, Project, Team
-│  ├─ project/              ← Board, Timeline, Calendar, Costs, Records, Files, Reports
-│  └─ components/           ← Layout, Modal, shared bits
+│  ├─ api.js                ← all database calls (+ search & recurring helpers)
+│  ├─ auth.jsx · workspace.jsx · theme.jsx · notifications.jsx   ← context providers
+│  ├─ pages/                ← Login, Home (My Work), Inbox, List/Space/User, Dashboard, Costs, Invoices, Reports
+│  ├─ views/                ← List, Board, Calendar, Table
+│  ├─ finance.js            ← cost / invoice math
+│  └─ components/           ← Layout, Sidebar, CommandPalette, TaskViews, TaskModal, Charts, Modal, shared Bits
 ├─ .env.example
 └─ netlify.toml
 ```
+
+> **After deploying schema.sql once**, apply any migrations you skipped. Recurring tasks need
+> `supabase/migration_recurring.sql` (adds `tasks.recurrence`). The finance pages need the finance migrations.
 
 ---
 

@@ -17,6 +17,8 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     start_date: task.start_date || '',
     due_date: task.due_date || '',
     time_estimate: task.time_estimate || '',
+    recur_freq: task.recurrence?.freq || '',
+    recur_interval: task.recurrence?.interval || 1,
     tags: Array.isArray(task.tags) ? task.tags : [],
     assignees: task.assignees || [],
     checklist: Array.isArray(task.checklist) ? task.checklist : [],
@@ -97,12 +99,13 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     if (!f.name.trim()) return alert('Task name is required')
     setBusy(true)
     const st = statuses.find((s) => s.id === f.status_id)
+    const recRule = f.recur_freq ? { freq: f.recur_freq, interval: Number(f.recur_interval) || 1 } : null
     const payload = {
       list_id: listId, name: f.name.trim(), description: f.description || null,
       status_id: f.status_id, priority: f.priority || null,
       start_date: f.start_date || null, due_date: f.due_date || null,
       time_estimate: f.time_estimate ? Number(f.time_estimate) : null,
-      tags: f.tags, checklist: f.checklist, custom: f.custom,
+      tags: f.tags, checklist: f.checklist, custom: f.custom, recurrence: recRule,
       completed_at: (st?.type === 'done' || st?.type === 'closed') ? new Date().toISOString() : null,
     }
     let id = task.id
@@ -133,6 +136,18 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
       if (oldA !== newA) acts.push({ field: 'assignee', from_val: (task.assignees || []).map(nm).join(', ') || 'none', to_val: f.assignees.map(nm).join(', ') || 'none' })
     }
     if (acts.length) await api.logActivity(acts.map((a) => ({ ...a, task_id: id, actor_id: user.id })))
+    // recurring: completing a repeating task spawns its next instance
+    const wasDone = (() => { const ty = statuses.find((s) => s.id === task.status_id)?.type; return ty === 'done' || ty === 'closed' })()
+    const nowDone = st?.type === 'done' || st?.type === 'closed'
+    if (!isNew && recRule && nowDone && !wasDone) {
+      await api.rollRecurringTask({
+        list_id: listId, name: f.name.trim(), description: f.description || null, priority: f.priority || null,
+        start_date: f.start_date || null, due_date: f.due_date || null,
+        time_estimate: f.time_estimate ? Number(f.time_estimate) : null,
+        tags: f.tags, custom: f.custom, checklist: f.checklist,
+        recurrence: recRule, created_by: task.created_by || user.id, assignees: f.assignees,
+      }, statuses)
+    }
     setBusy(false); onSaved()
   }
   async function remove() { if (confirm('Delete this task' + (subs.length ? ' and its subtasks' : '') + '?')) { await api.deleteTask(task.id); onSaved() } }
@@ -171,6 +186,22 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
 
       <div className="field"><label>Time estimate (minutes){f.time_estimate ? ` · ${fmtDuration(f.time_estimate)}` : ''}</label>
         <input type="number" value={f.time_estimate} onChange={set('time_estimate')} placeholder="e.g. 90" /></div>
+
+      <div className="field"><label>🔁 Repeat</label>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select value={f.recur_freq} onChange={set('recur_freq')} style={{ flex: 1 }}>
+            <option value="">Does not repeat</option>
+            {api.RECUR_FREQS.map((r) => <option key={r.k} value={r.k}>{r.n}</option>)}
+          </select>
+          {f.recur_freq && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--mut)', whiteSpace: 'nowrap', textTransform: 'none', letterSpacing: 0, fontWeight: 500 }}>
+              every
+              <input type="number" min="1" value={f.recur_interval} onChange={set('recur_interval')} style={{ width: 64 }} />
+            </label>
+          )}
+        </div>
+        {f.recur_freq && <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 5 }}>Completing this task creates the next one with dates moved forward.</div>}
+      </div>
 
       <div className="field"><label>Assignees</label>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

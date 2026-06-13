@@ -4,6 +4,7 @@ import { WorkspaceProvider } from './workspace'
 import { NotificationsProvider } from './notifications'
 import Layout from './components/Layout'
 import Login from './pages/Login'
+import ResetPassword from './pages/ResetPassword'
 import Home from './pages/Home'
 import ListPage from './pages/ListPage'
 import SpacePage from './pages/SpacePage'
@@ -22,8 +23,10 @@ function Protected({ children }) {
 }
 
 export default function App() {
-  const { loading, session } = useAuth()
+  const { loading, session, recovery } = useAuth()
   if (loading) return <div className="spin" />
+  // arriving from a password-reset email puts auth in recovery mode → force the reset screen
+  if (recovery) return <ResetPassword />
   return (
     <Routes>
       <Route path="/login" element={session ? <Navigate to="/" replace /> : <Login />} />

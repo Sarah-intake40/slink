@@ -8,6 +8,7 @@ export function AuthProvider({ children }) {
   const [session, setSession] = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [recovery, setRecovery] = useState(false)   // true while the user is resetting a forgotten password
 
   async function loadProfile(uid) {
     if (!uid) { setProfile(null); return }
@@ -21,7 +22,8 @@ export function AuthProvider({ children }) {
       await loadProfile(data.session?.user?.id)
       setLoading(false)
     })
-    const { data: sub } = supabase.auth.onAuthStateChange(async (_e, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange(async (event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true)
       setSession(s)
       await loadProfile(s?.user?.id)
     })
@@ -33,11 +35,22 @@ export function AuthProvider({ children }) {
     user: session?.user || null,
     profile,
     loading,
+    recovery,
     refreshProfile: () => loadProfile(session?.user?.id),
     signUp: (email, password, fullName) =>
       supabase.auth.signUp({ email, password, options: { data: { full_name: fullName } } }),
     signIn: (email, password) => supabase.auth.signInWithPassword({ email, password }),
     signOut: () => supabase.auth.signOut(),
+    // password reset: send the recovery email via our Brevo Edge Function (same as notify-email),
+    // then set the new password from the recovery session that the email link opens.
+    resetPassword: (email) =>
+      supabase.functions.invoke('reset-password', { body: { email: email.trim() } }),
+    updatePassword: async (password) => {
+      const res = await supabase.auth.updateUser({ password })
+      if (!res.error) setRecovery(false)
+      return res
+    },
+    cancelRecovery: () => setRecovery(false),
   }
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

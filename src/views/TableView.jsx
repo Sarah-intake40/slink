@@ -1,6 +1,7 @@
 import { Avatar, PriorityFlag, StatusDot, fmtDate, fmtDuration, isOverdue } from '../components/Bits'
 
-export default function TableView({ tasks, statuses, members, fields = [], listMap = {}, showList = false, onOpen }) {
+export default function TableView({ tasks, statuses, members, fields = [], listMap = {}, showList = false, onOpen, selected, onToggleSelect, onSelectMany }) {
+  const allSel = tasks.length > 0 && tasks.every((t) => selected?.has(t.id))
   const nameOf = (id) => members.find((m) => m.id === id)?.name
   const statusOf = (id) => statuses.find((s) => s.id === id)
   const isDone = (id) => { const t = statusOf(id)?.type; return t === 'done' || t === 'closed' }
@@ -21,6 +22,7 @@ export default function TableView({ tasks, statuses, members, fields = [], listM
     <div style={{ overflowX: 'auto' }}>
       <table className="tbl">
         <thead><tr>
+          {onToggleSelect && <th className="tbl-check"><input type="checkbox" checked={allSel} onChange={(e) => onSelectMany(tasks.map((t) => t.id), e.target.checked)} /></th>}
           <th>Name</th>{showList && <th>List</th>}<th>Status</th><th>Assignees</th><th>Priority</th><th>Due</th><th>Estimate</th>
           {fields.map((fl) => <th key={fl.id}>{fl.name}</th>)}
         </tr></thead>
@@ -28,7 +30,8 @@ export default function TableView({ tasks, statuses, members, fields = [], listM
           {tasks.map((t) => {
             const s = statusOf(t.status_id), done = isDone(t.status_id)
             return (
-              <tr key={t.id} onClick={() => onOpen(t)}>
+              <tr key={t.id} className={selected?.has(t.id) ? 'selected' : ''} onClick={() => onOpen(t)}>
+                {onToggleSelect && <td className="tbl-check"><input type="checkbox" checked={!!selected?.has(t.id)} onClick={(e) => e.stopPropagation()} onChange={() => onToggleSelect(t.id)} /></td>}
                 <td style={{ fontWeight: 500, textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--mut)' : 'var(--ink)' }}>{t.name}</td>
                 {showList && <td>{listMap[t.list_id] ? <span className="list-chip" style={{ background: listMap[t.list_id].color + '22', color: listMap[t.list_id].color }}>{listMap[t.list_id].name}</span> : '—'}</td>}
                 <td>{s ? <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}><StatusDot color={s.color} size={8} />{s.name}</span> : '—'}</td>
@@ -40,7 +43,7 @@ export default function TableView({ tasks, statuses, members, fields = [], listM
               </tr>
             )
           })}
-          {!tasks.length && <tr><td colSpan={6 + (showList ? 1 : 0) + fields.length} style={{ color: 'var(--mut)', textAlign: 'center', padding: 24 }}>No tasks.</td></tr>}
+          {!tasks.length && <tr><td colSpan={6 + (showList ? 1 : 0) + (onToggleSelect ? 1 : 0) + fields.length} style={{ color: 'var(--mut)', textAlign: 'center', padding: 24 }}>No tasks.</td></tr>}
         </tbody>
       </table>
     </div>

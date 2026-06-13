@@ -71,7 +71,7 @@ export default function DashboardPage() {
         <div className="c"><div className="v" style={{ color: 'var(--done)' }}>{money(totals.received)}</div><div className="l">Received</div></div>
       </div>
 
-      <div className="card pad banner" style={{ borderColor: behind ? '#f3c5c7' : '#bbe7c8', background: behind ? '#fff5f5' : '#f1fbf4', marginBottom: 16 }}>
+      <div className="card pad banner" style={{ borderColor: behind ? 'var(--danger-line)' : 'var(--ok-line)', background: behind ? 'var(--danger-soft)' : 'var(--ok-soft)', marginBottom: 16 }}>
         <span style={{ fontSize: 24 }}>{behind ? '⚠️' : '✅'}</span>
         <div>
           <div style={{ fontWeight: 800, color: behind ? 'var(--danger)' : 'var(--done)' }}>

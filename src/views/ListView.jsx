@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Avatar, PriorityFlag, StatusDot, PRIORITIES, fmtDate, isOverdue } from '../components/Bits'
 
-export default function ListView({ tasks, statuses, members, groupBy = 'status', listMap = {}, showList = false, onOpen, onQuickAdd, onChangeStatus }) {
+export default function ListView({ tasks, statuses, members, groupBy = 'status', listMap = {}, showList = false, onOpen, onQuickAdd, onChangeStatus, selected, onToggleSelect, onSelectMany }) {
   const [collapsed, setCollapsed] = useState({})
   const [dragId, setDragId] = useState(null)
   const canDrag = groupBy === 'status'
@@ -33,6 +33,11 @@ export default function ListView({ tasks, statuses, members, groupBy = 'status',
         <div key={g.key} className="lv-group">
           <div className="lv-grouphead">
             <button className="caret" onClick={() => setCollapsed((c) => ({ ...c, [g.key]: !c[g.key] }))}>{collapsed[g.key] ? '▸' : '▾'}</button>
+            {onToggleSelect && g.items.length > 0 && (
+              <input type="checkbox" className="lv-check" title="Select all in group"
+                checked={g.items.every((t) => selected?.has(t.id))}
+                onChange={(e) => onSelectMany(g.items.map((t) => t.id), e.target.checked)} />
+            )}
             <span className="lv-statuspill" style={{ background: (g.color || '#87909e') + '22', color: g.color }}>
               <StatusDot color={g.color} size={8} /> {g.label}
             </span>
@@ -46,15 +51,22 @@ export default function ListView({ tasks, statuses, members, groupBy = 'status',
               {g.items.map((t) => {
                 const done = isDoneStatus(t.status_id)
                 const lst = listMap[t.list_id]
+                const sel = selected?.has(t.id)
                 return (
-                  <div key={t.id} className="lv-row" onClick={() => onOpen(t)}
+                  <div key={t.id} className={'lv-row' + (sel ? ' selected' : '')} onClick={() => onOpen(t)}
                     draggable={canDrag}
                     style={showList && lst ? { borderLeft: `3px solid ${lst.color}` } : undefined}
                     onDragStart={(e) => { setDragId(t.id); e.currentTarget.classList.add('dragging') }}
                     onDragEnd={(e) => e.currentTarget.classList.remove('dragging')}>
+                    {onToggleSelect && (
+                      <input type="checkbox" className="lv-check" checked={!!sel}
+                        onClick={(e) => e.stopPropagation()}
+                        onChange={() => onToggleSelect(t.id)} />
+                    )}
                     {showList && lst && <span className="list-chip" style={{ background: lst.color + '22', color: lst.color }}>{lst.name}</span>}
                     <span className="lv-name" style={{ textDecoration: done ? 'line-through' : 'none', color: done ? 'var(--mut)' : 'var(--ink)' }}>{t.name}</span>
                     <span className="lv-meta">
+                      {t.recurrence?.freq && <span title="Recurring" style={{ fontSize: 12 }}>🔁</span>}
                       <PriorityFlag k={t.priority} />
                       {(t.tags || []).slice(0, 2).map((tg) => <span key={tg} className="tagchip">{tg}</span>)}
                       {t.commentCount > 0 && <span className="lv-cmt">💬 {t.commentCount}</span>}
