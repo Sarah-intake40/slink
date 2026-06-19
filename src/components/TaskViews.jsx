@@ -22,7 +22,7 @@ export const normTask = (t) => ({
 })
 
 // Floating action bar shown when one or more tasks are selected.
-function BulkBar({ count, statuses, members, onStatus, onAssign, onPriority, onDelete, onClear }) {
+function BulkBar({ count, statuses, members, moveLists = [], onStatus, onAssign, onPriority, onMove, onDelete, onClear }) {
   return (
     <div className="bulkbar">
       <span className="bulkbar-count">{count} selected</span>
@@ -39,6 +39,12 @@ function BulkBar({ count, statuses, members, onStatus, onAssign, onPriority, onD
         <option value="" disabled>Assign to…</option>
         {members.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
       </select>
+      {moveLists.length > 1 && (
+        <select className="bulkbar-sel" value="" onChange={(e) => onMove(e.target.value)}>
+          <option value="" disabled>Move to…</option>
+          {moveLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+        </select>
+      )}
       <button className="btn danger sm" onClick={onDelete}>🗑 Delete</button>
       <button className="bulkbar-x" onClick={onClear} title="Clear selection">✕</button>
     </div>
@@ -118,7 +124,11 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     await api.logActivity([{ task_id: taskId, actor_id: user.id, field: 'status', from_val: stName(t.status_id), to_val: stName(status_id) }])
     if (nowDone && !isDoneType(t.status_id)) {
       playDone()                                                       // completion chime
-      if (t.move_to_list && t.move_to_list !== t.list_id) { await api.updateTask(t.id, { list_id: t.move_to_list }); reload && reload() }  // relocate
+      if (t.move_to_list && t.move_to_list !== t.list_id) {           // relocate → lands as "To Do" in the destination
+        const todo = statuses.find((s) => s.type === 'todo') || statuses[0]
+        await api.updateTask(t.id, { list_id: t.move_to_list, status_id: todo?.id || null, completed_at: null })
+        reload && reload()
+      }
       if (t.recurrence?.freq) { await api.rollRecurringTask(t, statuses); reload && reload() }  // spawn next instance
     }
   }
@@ -139,7 +149,9 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
       const t = rows.find((x) => x.id === id)
       return api.updateTask(id, { status_id, completed_at: done ? new Date().toISOString() : null })
         .then(() => api.logActivity([{ task_id: id, actor_id: user.id, field: 'status', from_val: stName(t?.status_id), to_val: stName(status_id) }]))
-        .then(() => (done && !isDoneType(t?.status_id) && t?.move_to_list && t.move_to_list !== t.list_id) ? api.updateTask(id, { list_id: t.move_to_list }) : null)
+        .then(() => (done && !isDoneType(t?.status_id) && t?.move_to_list && t.move_to_list !== t.list_id)
+          ? api.updateTask(id, { list_id: t.move_to_list, status_id: (statuses.find((s) => s.type === 'todo') || statuses[0])?.id || null, completed_at: null })
+          : null)
         .then(() => (done && !isDoneType(t?.status_id) && t?.recurrence?.freq) ? api.rollRecurringTask(t, statuses) : null)
     }))
     clearSel(); reload && reload()
@@ -159,12 +171,20 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     await Promise.all(ids.map((id) => api.updateTask(id, { priority })))
     clearSel(); reload && reload()
   }
+  async function bulkMove(list_id) {
+    if (!list_id) return
+    const ids = selIds()
+    await Promise.all(ids.map((id) => api.updateTask(id, { list_id })))
+    clearSel(); reload && reload()
+  }
   async function bulkDelete() {
     const ids = selIds()
     if (!ids.length || !window.confirm(`Delete ${ids.length} task${ids.length > 1 ? 's' : ''}? This cannot be undone.`)) return
     await Promise.all(ids.map((id) => api.deleteTask(id)))
     clearSel(); reload && reload()
   }
+  // move-to lists: within the current space (so statuses stay valid); fall back to all workspace lists
+  const moveLists = space ? lists.filter((l) => l.space_id === space.id) : lists
 
   const selectProps = { selected, onToggleSelect: toggleSelect, onSelectMany: selectMany }
 
@@ -197,8 +217,8 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
         listMap={listMap} showList={multiList} {...selectProps} onOpen={setEditing} />}
 
       {selected.size > 0 && (
-        <BulkBar count={selected.size} statuses={statuses} members={members}
-          onStatus={bulkStatus} onAssign={bulkAssign} onPriority={bulkPriority}
+        <BulkBar count={selected.size} statuses={statuses} members={members} moveLists={moveLists}
+          onStatus={bulkStatus} onAssign={bulkAssign} onPriority={bulkPriority} onMove={bulkMove}
           onDelete={bulkDelete} onClear={clearSel} />
       )}
 

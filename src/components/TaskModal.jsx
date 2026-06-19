@@ -21,6 +21,7 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     recur_freq: task.recurrence?.freq || '',
     recur_interval: task.recurrence?.interval || 1,
     move_to_list: task.move_to_list || '',
+    current_list: listId,
     tags: Array.isArray(task.tags) ? task.tags : [],
     assignees: task.assignees || [],
     checklist: Array.isArray(task.checklist) ? task.checklist : [],
@@ -61,7 +62,8 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
   const setCustom = (fid, v) => setF((p) => ({ ...p, custom: { ...p.custom, [fid]: v } }))
   // destination lists for "move when done" — same space only, so the status set stays valid
   const curList = lists.find((l) => l.id === listId)
-  const moveOptions = lists.filter((l) => l.space_id === curList?.space_id && l.id !== listId)
+  const sameSpaceLists = lists.filter((l) => l.space_id === curList?.space_id)
+  const moveOptions = sameSpaceLists.filter((l) => l.id !== listId)
 
   // checklist
   const addCheck = () => { if (!checkInput.trim()) return; setF({ ...f, checklist: [...f.checklist, { id: uid(), text: checkInput.trim(), done: false }] }); setCheckInput('') }
@@ -107,16 +109,22 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     const recRule = f.recur_freq ? { freq: f.recur_freq, interval: Number(f.recur_interval) || 1 } : null
     const wasDone = (() => { const ty = statuses.find((s) => s.id === task.status_id)?.type; return ty === 'done' || ty === 'closed' })()
     const nowDone = st?.type === 'done' || st?.type === 'closed'
-    // relocate to another list on completion (kept within the same space → status set stays valid)
-    const movingTo = !isNew && nowDone && !wasDone && f.move_to_list && f.move_to_list !== listId ? f.move_to_list : null
+    // manual move (the "List" selector) and auto-move on completion (both kept within the same space).
+    // Auto-move fires whenever the task is done (newly OR already) and a different destination is set,
+    // so editing the "when done" target on an already-done ticket moves it on save.
+    const baseList = f.current_list || listId
+    const movingTo = !isNew && nowDone && f.move_to_list && f.move_to_list !== baseList ? f.move_to_list : null
+    const todoStatus = statuses.find((s) => s.type === 'todo') || statuses[0]
     const payload = {
-      list_id: movingTo || listId, name: f.name.trim(), description: f.description || null,
-      status_id: f.status_id, priority: f.priority || null,
+      list_id: movingTo || baseList, name: f.name.trim(), description: f.description || null,
+      // a moved ticket lands as "To Do" in the destination list (fresh, not completed)
+      status_id: movingTo ? (todoStatus?.id || f.status_id) : f.status_id,
+      priority: f.priority || null,
       start_date: f.start_date || null, due_date: f.due_date || null,
       time_estimate: f.time_estimate ? Number(f.time_estimate) : null,
       tags: f.tags, checklist: f.checklist, custom: f.custom, recurrence: recRule,
       move_to_list: f.move_to_list || null,
-      completed_at: nowDone ? new Date().toISOString() : null,
+      completed_at: movingTo ? null : (nowDone ? new Date().toISOString() : null),
     }
     let id = task.id
     if (isNew) {
@@ -137,7 +145,8 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     const acts = []
     if (isNew) acts.push({ field: 'created', to_val: f.name.trim() })
     else {
-      if (task.status_id !== f.status_id) acts.push({ field: 'status', from_val: stName(task.status_id), to_val: stName(f.status_id) })
+      if (payload.list_id !== listId) acts.push({ field: 'moved', to_val: lists.find((l) => l.id === payload.list_id)?.name || 'another list' })
+      if (!movingTo && task.status_id !== f.status_id) acts.push({ field: 'status', from_val: stName(task.status_id), to_val: stName(f.status_id) })
       if ((task.priority || '') !== (f.priority || '')) acts.push({ field: 'priority', from_val: task.priority || 'none', to_val: f.priority || 'none' })
       if ((task.due_date || '') !== (f.due_date || '')) acts.push({ field: 'due_date', from_val: task.due_date || '—', to_val: f.due_date || '—' })
       if ((task.start_date || '') !== (f.start_date || '')) acts.push({ field: 'start_date', from_val: task.start_date || '—', to_val: f.start_date || '—' })
@@ -175,6 +184,13 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     <Modal wide kicker={isNew ? 'NEW TASK' : 'TASK'} title={isNew ? 'Create task' : f.name} onClose={onClose}>
       <div className="field"><label>Name</label>
         <input autoFocus value={f.name} onChange={set('name')} placeholder="Task name" /></div>
+
+      {!isNew && sameSpaceLists.length > 1 && (
+        <div className="field"><label>📋 List</label>
+          <select value={f.current_list} onChange={set('current_list')}>
+            {sameSpaceLists.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select></div>
+      )}
 
       <div className="row2">
         <div className="field"><label>Status</label>
@@ -402,6 +418,7 @@ function describeActivity(a) {
     case 'due_date': return <>changed due date to <b>{a.to_val}</b></>
     case 'start_date': return <>changed start date to <b>{a.to_val}</b></>
     case 'name': return <>renamed it to <b>{a.to_val}</b></>
+    case 'moved': return <>moved it to <b>{a.to_val}</b></>
     default: return 'updated the task'
   }
 }

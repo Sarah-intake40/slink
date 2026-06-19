@@ -27,7 +27,7 @@ const STR = {
   spendByCat: { en: 'Spend by category', ar: 'المصروفات حسب التصنيف' }, none: { en: 'No data.', ar: 'لا توجد بيانات.' },
   printBtn: { en: 'Print / Save PDF', ar: 'طباعة / حفظ PDF' }, excelBtn: { en: 'Download Excel', ar: 'تنزيل Excel' },
   wordBtn: { en: 'Download Word', ar: 'تنزيل Word' }, columns: { en: 'Columns', ar: 'الأعمدة' },
-  projectName: { en: 'Project name', ar: 'اسم المشروع' },
+  sections: { en: 'Sections', ar: 'الأقسام' }, projectName: { en: 'Project name', ar: 'اسم المشروع' },
   reportType: { en: 'Report type', ar: 'نوع التقرير' }, reportTitle: { en: 'Report title', ar: 'عنوان التقرير' },
   language: { en: 'Language', ar: 'اللغة' }, total: { en: 'Total', ar: 'الإجمالي' }, unassigned: { en: 'Unassigned', ar: 'غير مُسند' },
   introPh: { en: 'Write an introduction / notes to appear at the top of the report…', ar: 'اكتب مقدمة أو ملاحظات تظهر في بداية التقرير…' },
@@ -47,10 +47,14 @@ export default function ReportsPage() {
   const [projectName, setProjectName] = useState('')   // manual project name (falls back to workspace name)
   const [repDate, setRepDate] = useState('')           // manual report date (falls back to today)
   const [taskCols, setTaskCols] = useState(DEFAULT_TASK_COLS)
+  const [hiddenSecs, setHiddenSecs] = useState([])     // report sections the user has hidden
+  const [showDate, setShowDate] = useState(true)       // whether to print the date on the report
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const t = (k) => STR[k]?.[lang] ?? k
   const toggleCol = (k) => setTaskCols((c) => c.includes(k) ? (c.length > 1 ? c.filter((x) => x !== k) : c) : [...c, k])
+  const toggleSec = (k) => setHiddenSecs((h) => h.includes(k) ? h.filter((x) => x !== k) : [...h, k])
+  const show = (k) => !hiddenSecs.includes(k)
 
   const load = useCallback(async () => {
     if (!ws) return
@@ -108,6 +112,17 @@ export default function ReportsPage() {
     { k: 'due', label: t('due'), get: (x) => fmtDate(x.due_date) || '—' },
   ]
   const cols = ALL_TASK_COLS.filter((c) => taskCols.includes(c.k))
+
+  // report sections the user can hide; each belongs to one or more report types
+  const SECTIONS = [
+    { k: 'summary', label: t('summary'), types: ['daily', 'project'] },
+    { k: 'tasks', label: t('tasks'), types: ['daily', 'project'] },
+    { k: 'financial', label: t('financial'), types: ['budget', 'project'] },
+    { k: 'spendByCat', label: t('spendByCat'), types: ['budget', 'project'] },
+    { k: 'expenses', label: t('expenses'), types: ['budget', 'project'] },
+    { k: 'invoices', label: t('invoices'), types: ['budget', 'project'] },
+  ]
+  const typeSections = SECTIONS.filter((s) => s.types.includes(type))
 
   const TasksTable = () => (
     <table className="rep-tbl"><thead><tr>
@@ -179,17 +194,17 @@ export default function ReportsPage() {
     const meta = [
       [title],
       [t('projectLabel'), proj],
-      [t('date'), dateStr],
     ]
+    if (showDate) meta.push([t('date'), dateStr])
     if (intro.trim()) meta.push([t('intro'), intro.trim()])
 
     if (type === 'daily' || type === 'project') {
-      add(t('summary'), [
+      if (show('summary')) add(t('summary'), [
         ...meta, [],
         [t('totalTasks'), total], [t('completed'), done], [t('inProgress'), active],
         [t('overdue'), overdue], [t('progress'), prog + '%'],
       ])
-      add(t('tasks'), [
+      if (show('tasks')) add(t('tasks'), [
         cols.map((c) => c.label),
         ...data.tasks.map((x) => cols.map((c) => c.get(x))),
       ])
@@ -197,24 +212,24 @@ export default function ReportsPage() {
 
     if ((type === 'budget' || type === 'project') && fin) {
       const totalSpent = data.expenses.reduce((a, e) => a + num(e.amount), 0)
-      add(t('financial'), [
+      if (show('financial')) add(t('financial'), [
         ...(type === 'budget' ? [...meta, []] : []),
         [t('budgetL'), fin.budget], [t('spent'), fin.spent], [t('remaining'), fin.remaining],
         [t('claimed'), fin.claimed], [t('received'), fin.received], [t('outstanding'), fin.outstanding],
       ])
-      add(t('spendByCat'), [
+      if (show('spendByCat')) add(t('spendByCat'), [
         [t('category'), t('amount'), '%'],
         ...data.cats.map((c) => {
           const sp = data.expenses.filter((e) => e.category_id === c.id).reduce((a, e) => a + num(e.amount), 0)
           return [c.name, sp, (totalSpent ? Math.round(sp / totalSpent * 100) : 0) + '%']
         }),
       ])
-      add(t('expenses'), [
+      if (show('expenses')) add(t('expenses'), [
         [t('date'), t('category'), t('description'), t('amount')],
         ...data.expenses.map((e) => [fmtDate(e.spent_on), catOf(e.category_id)?.name || '', e.description || '', num(e.amount)]),
         [t('total'), '', '', totalSpent],
       ])
-      add(t('invoices'), [
+      if (show('invoices')) add(t('invoices'), [
         [t('no'), t('date'), t('currentWorks'), t('totalDue'), t('status')],
         ...data.invoices.map((i) => { const a = invoiceAmounts(i), s = invStatus(i.status); return [i.seq, fmtDate(i.invoice_date), a.current, a.totalDue, lang === 'ar' ? s.ar : s.en] }),
       ])
@@ -237,27 +252,27 @@ export default function ReportsPage() {
     let body = `<div style="border-bottom:3px solid #7B68EE;padding-bottom:8px;margin-bottom:8px">`
       + `<div style="font-size:9pt;color:#7B68EE;font-weight:bold;text-transform:uppercase">${esc(t('projectLabel'))}</div>`
       + `<h1 style="font-size:20pt;margin:2px 0">${esc(proj)}</h1>`
-      + `<div style="font-size:10pt;color:#555"><b>${esc(title)}</b> — ${esc(t('date'))}: ${esc(dateStr)}</div></div>`
+      + `<div style="font-size:10pt;color:#555"><b>${esc(title)}</b>${showDate ? ` — ${esc(t('date'))}: ${esc(dateStr)}` : ''}</div></div>`
 
     if (intro.trim()) body += sec(t('intro'), `<p style="font-size:11pt;line-height:1.6;white-space:pre-wrap">${esc(intro.trim())}</p>`)
 
     if (type === 'daily' || type === 'project') {
-      body += sec(t('summary'), table(
+      if (show('summary')) body += sec(t('summary'), table(
         [t('totalTasks'), t('completed'), t('inProgress'), t('overdue'), t('progress')],
         [[total, done, active, overdue, prog + '%']]))
-      body += sec(t('tasks'), table(cols.map((c) => c.label), data.tasks.map((x) => cols.map((c) => c.get(x)))))
+      if (show('tasks')) body += sec(t('tasks'), table(cols.map((c) => c.label), data.tasks.map((x) => cols.map((c) => c.get(x)))))
     }
 
     if ((type === 'budget' || type === 'project') && fin) {
       const totalSpent = data.expenses.reduce((a, e) => a + num(e.amount), 0)
-      body += sec(t('financial'), table(
+      if (show('financial')) body += sec(t('financial'), table(
         [t('budgetL'), t('spent'), t('remaining'), t('claimed'), t('received'), t('outstanding')],
         [[m2(fin.budget), m2(fin.spent), m2(fin.remaining), m2(fin.claimed), m2(fin.received), m2(fin.outstanding)]]))
-      body += sec(t('spendByCat'), table([t('category'), t('amount'), '%'],
+      if (show('spendByCat')) body += sec(t('spendByCat'), table([t('category'), t('amount'), '%'],
         data.cats.map((c) => { const sp = data.expenses.filter((e) => e.category_id === c.id).reduce((a, e) => a + num(e.amount), 0); return [c.name, m2(sp), (totalSpent ? Math.round(sp / totalSpent * 100) : 0) + '%'] })))
-      body += sec(t('expenses'), table([t('date'), t('category'), t('description'), t('amount')],
+      if (show('expenses')) body += sec(t('expenses'), table([t('date'), t('category'), t('description'), t('amount')],
         [...data.expenses.map((e) => [fmtDate(e.spent_on), catOf(e.category_id)?.name || '', e.description || '', m2(e.amount)]), [t('total'), '', '', m2(totalSpent)]]))
-      body += sec(t('invoices'), table([t('no'), t('date'), t('currentWorks'), t('totalDue'), t('status')],
+      if (show('invoices')) body += sec(t('invoices'), table([t('no'), t('date'), t('currentWorks'), t('totalDue'), t('status')],
         data.invoices.map((i) => { const a = invoiceAmounts(i), s = invStatus(i.status); return [i.seq, fmtDate(i.invoice_date), m2(a.current), m2(a.totalDue), rtl ? s.ar : s.en] })))
     }
 
@@ -296,7 +311,15 @@ export default function ReportsPage() {
             <select value={lang} onChange={(e) => setLang(e.target.value)}>
               <option value="en">English</option><option value="ar">العربية</option>
             </select></label>
-          {(type === 'daily' || type === 'project') && (
+          <details className="vc-ctl rep-colpicker">
+            <summary>{t('sections')} ({typeSections.filter((s) => show(s.k)).length}/{typeSections.length})</summary>
+            <div className="rep-colmenu">
+              {typeSections.map((s) => (
+                <label key={s.k}><input type="checkbox" checked={show(s.k)} onChange={() => toggleSec(s.k)} /> {s.label}</label>
+              ))}
+            </div>
+          </details>
+          {(type === 'daily' || type === 'project') && show('tasks') && (
             <details className="vc-ctl rep-colpicker">
               <summary>{t('columns')} ({cols.length})</summary>
               <div className="rep-colmenu">
@@ -312,7 +335,8 @@ export default function ReportsPage() {
             <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={ws?.name || ''}
               dir={lang === 'ar' ? 'rtl' : 'ltr'} style={repInput} /></label>
           <label className="vc-ctl"><span>{t('date')}</span>
-            <input type="date" value={repDate} onChange={(e) => setRepDate(e.target.value)} style={repInput} /></label>
+            <input type="checkbox" checked={showDate} onChange={(e) => setShowDate(e.target.checked)} title="Show the date on the report" style={{ accentColor: 'var(--accent)' }} />
+            <input type="date" value={repDate} onChange={(e) => setRepDate(e.target.value)} disabled={!showDate} style={{ ...repInput, opacity: showDate ? 1 : 0.5 }} /></label>
           <label className="vc-ctl" style={{ flex: '1 1 200px' }}><span>{t('reportTitle')}</span>
             <input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder={t(type)}
               dir={lang === 'ar' ? 'rtl' : 'ltr'} style={repInput} /></label>
@@ -329,7 +353,7 @@ export default function ReportsPage() {
           </div>
           <div className="rep-meta">
             <div className="rep-title">{title}</div>
-            <div>{t('date')}: {dateStr}</div>
+            {showDate && <div>{t('date')}: {dateStr}</div>}
           </div>
         </div>
 
@@ -337,7 +361,7 @@ export default function ReportsPage() {
           <div className="rep-sec"><h3>{t('intro')}</h3><p className="rep-intro" style={{ whiteSpace: 'pre-wrap' }}>{intro}</p></div>
         )}
 
-        {(type === 'daily' || type === 'project') && (
+        {(type === 'daily' || type === 'project') && show('summary') && (
           <div className="rep-sec">
             <h3>{t('summary')}</h3>
             <div className="rep-kpi">
@@ -350,16 +374,16 @@ export default function ReportsPage() {
           </div>
         )}
 
-        {(type === 'daily' || type === 'project') && (
+        {(type === 'daily' || type === 'project') && show('tasks') && (
           <div className="rep-sec"><h3>{t('tasks')}</h3><TasksTable /></div>
         )}
 
         {(type === 'budget' || type === 'project') && fin && (
           <>
-            <div className="rep-sec"><h3>{t('financial')}</h3><FinSummary /></div>
-            <div className="rep-sec"><h3>{t('spendByCat')}</h3><SpendByCat /></div>
-            <div className="rep-sec"><h3>{t('expenses')}</h3><ExpensesTable /></div>
-            <div className="rep-sec"><h3>{t('invoices')}</h3><InvoicesTable /></div>
+            {show('financial') && <div className="rep-sec"><h3>{t('financial')}</h3><FinSummary /></div>}
+            {show('spendByCat') && <div className="rep-sec"><h3>{t('spendByCat')}</h3><SpendByCat /></div>}
+            {show('expenses') && <div className="rep-sec"><h3>{t('expenses')}</h3><ExpensesTable /></div>}
+            {show('invoices') && <div className="rep-sec"><h3>{t('invoices')}</h3><InvoicesTable /></div>}
           </>
         )}
 
