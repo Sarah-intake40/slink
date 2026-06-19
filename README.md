@@ -124,3 +124,9 @@ slink/
 - **Can sign up but see nothing** → that's correct for non-PM users until the PM adds you to a project.
 - **Login redirect issues after deploy** → set the **Site URL** in Supabase (step 6).
 - **File upload fails** → confirm `schema.sql` ran fully (it creates the `drawings` bucket and its policies).
+
+Copyright (c) 2026 [Your Name]. All Rights Reserved.
+
+This source is publicly visible for reference only.
+No permission is granted to use, copy, modify, or distribute
+any part of this software without prior written consent from the author.
