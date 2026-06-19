@@ -67,24 +67,43 @@ export function expenseAmount({ rate_basis, quantity, rate, hours, amount }) {
   if (rate_basis === 'unit' || rate_basis === 'day') return q * r
   return Number(amount) || 0
 }
-// thousands-separated number input (e.g. 100,000); emits a Number or ''.
-// Keeps an internal text buffer while focused so decimals (e.g. 100.45) can be typed.
+// Live-format a typed string as a thousands-separated number, keeping a decimal part
+// (calculator-style: "1234.5" → "1,234.5"). Returns the display string.
+export function formatMoneyInput(input, decimals = false) {
+  if (input == null) return ''
+  let s = String(input)
+  if (!decimals) {
+    const d = s.replace(/\D/g, '')
+    return d ? Number(d).toLocaleString('en-US') : ''
+  }
+  s = s.replace(/[^\d.]/g, '')
+  const dot = s.indexOf('.')
+  if (dot !== -1) s = s.slice(0, dot + 1) + s.slice(dot + 1).replace(/\./g, '')  // keep only the first dot
+  const hasDot = s.includes('.')
+  let [ints, dec = ''] = s.split('.')
+  dec = dec.slice(0, 2)
+  const intFmt = ints === '' ? (hasDot ? '0' : '') : Number(ints).toLocaleString('en-US')
+  return intFmt + (hasDot ? '.' + dec : '')
+}
+
+// thousands-separated number input (e.g. 100,000 or 1,234.5); emits a Number or ''.
+// Commas stay visible while typing, decimals included (when `decimals` is set).
 export function MoneyInput({ value, onChange, placeholder, decimals = false, ...rest }) {
-  const formatted = value === '' || value == null ? '' : Number(value).toLocaleString('en-US', { maximumFractionDigits: decimals ? 2 : 0 })
+  const fromValue = value === '' || value == null ? '' : formatMoneyInput(String(value), decimals)
   const [focused, setFocused] = useState(false)
-  const [text, setText] = useState(formatted)
-  useEffect(() => { if (!focused) setText(formatted) }, [formatted, focused])
+  const [text, setText] = useState(fromValue)
+  useEffect(() => { if (!focused) setText(fromValue) }, [fromValue, focused])
 
   function handle(e) {
-    let raw = e.target.value.replace(decimals ? /[^\d.]/g : /[^\d]/g, '')
-    if (decimals) { const p = raw.split('.'); if (p.length > 2) raw = p[0] + '.' + p.slice(1).join('') } // one dot only
-    setText(raw)
+    const shown = formatMoneyInput(e.target.value, decimals)
+    setText(shown)
+    const raw = shown.replace(/,/g, '')
     onChange(raw === '' || raw === '.' ? '' : Number(raw))
   }
   return (
     <input type="text" inputMode="decimal" placeholder={placeholder}
-      value={focused ? text : formatted}
-      onFocus={() => { setFocused(true); setText(value === '' || value == null ? '' : String(value)) }}
+      value={focused ? text : fromValue}
+      onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
       onChange={handle} {...rest} />
   )

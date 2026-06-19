@@ -118,6 +118,7 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
     await api.logActivity([{ task_id: taskId, actor_id: user.id, field: 'status', from_val: stName(t.status_id), to_val: stName(status_id) }])
     if (nowDone && !isDoneType(t.status_id)) {
       playDone()                                                       // completion chime
+      if (t.move_to_list && t.move_to_list !== t.list_id) { await api.updateTask(t.id, { list_id: t.move_to_list }); reload && reload() }  // relocate
       if (t.recurrence?.freq) { await api.rollRecurringTask(t, statuses); reload && reload() }  // spawn next instance
     }
   }
@@ -138,6 +139,7 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
       const t = rows.find((x) => x.id === id)
       return api.updateTask(id, { status_id, completed_at: done ? new Date().toISOString() : null })
         .then(() => api.logActivity([{ task_id: id, actor_id: user.id, field: 'status', from_val: stName(t?.status_id), to_val: stName(status_id) }]))
+        .then(() => (done && !isDoneType(t?.status_id) && t?.move_to_list && t.move_to_list !== t.list_id) ? api.updateTask(id, { list_id: t.move_to_list }) : null)
         .then(() => (done && !isDoneType(t?.status_id) && t?.recurrence?.freq) ? api.rollRecurringTask(t, statuses) : null)
     }))
     clearSel(); reload && reload()
@@ -202,7 +204,7 @@ export default function TaskViews({ tasks, statuses, fields, members, lists = []
 
       {editing && (
         <TaskModal task={editing} listId={editing.list_id || defaultListId} statuses={statuses} members={members} fields={fields}
-          allTasks={rows} onClose={() => setEditing(null)}
+          lists={lists} allTasks={rows} onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); reload && reload() }} reload={reload} />
       )}
       {customizing && space && (

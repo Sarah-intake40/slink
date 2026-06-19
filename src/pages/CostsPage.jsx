@@ -238,7 +238,7 @@ function BudgetModal({ ws, onClose, onSaved }) {
   return (
     <Modal kicker="PROJECT BUDGET" title="Set the whole-project budget" onClose={onClose}>
       <div className="field"><label>Budget (SAR)</label>
-        <MoneyInput value={b} onChange={setB} placeholder="100,000" autoFocus />
+        <MoneyInput decimals value={b} onChange={setB} placeholder="100,000" autoFocus />
         <div style={{ fontSize: 12, color: 'var(--mut)', marginTop: 5, fontFamily: 'ui-monospace,monospace' }}>= {money(b)}</div>
       </div>
       <div style={{ display: 'flex', gap: 10 }}>

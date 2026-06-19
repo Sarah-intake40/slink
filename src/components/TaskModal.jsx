@@ -6,7 +6,7 @@ import Modal from './Modal'
 import { PRIORITIES, Avatar, todayISO, uid, fmtDuration } from './Bits'
 import { playDone } from '../sound'
 
-export default function TaskModal({ task, listId, statuses, members, fields = [], allTasks, onClose, onSaved, reload }) {
+export default function TaskModal({ task, listId, statuses, members, fields = [], lists = [], allTasks, onClose, onSaved, reload }) {
   const { user } = useAuth()
   const isNew = !task.id
   const doneStatus = statuses.find((s) => s.type === 'done') || statuses[statuses.length - 1]
@@ -20,6 +20,7 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     time_estimate: task.time_estimate || '',
     recur_freq: task.recurrence?.freq || '',
     recur_interval: task.recurrence?.interval || 1,
+    move_to_list: task.move_to_list || '',
     tags: Array.isArray(task.tags) ? task.tags : [],
     assignees: task.assignees || [],
     checklist: Array.isArray(task.checklist) ? task.checklist : [],
@@ -58,6 +59,9 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
   const removeTag = (t) => setF({ ...f, tags: f.tags.filter((x) => x !== t) })
   const allTags = [...new Set((allTasks || []).flatMap((t) => t.tags || []))].filter((t) => !f.tags.includes(t)).slice(0, 8)
   const setCustom = (fid, v) => setF((p) => ({ ...p, custom: { ...p.custom, [fid]: v } }))
+  // destination lists for "move when done" — same space only, so the status set stays valid
+  const curList = lists.find((l) => l.id === listId)
+  const moveOptions = lists.filter((l) => l.space_id === curList?.space_id && l.id !== listId)
 
   // checklist
   const addCheck = () => { if (!checkInput.trim()) return; setF({ ...f, checklist: [...f.checklist, { id: uid(), text: checkInput.trim(), done: false }] }); setCheckInput('') }
@@ -101,13 +105,18 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     setBusy(true)
     const st = statuses.find((s) => s.id === f.status_id)
     const recRule = f.recur_freq ? { freq: f.recur_freq, interval: Number(f.recur_interval) || 1 } : null
+    const wasDone = (() => { const ty = statuses.find((s) => s.id === task.status_id)?.type; return ty === 'done' || ty === 'closed' })()
+    const nowDone = st?.type === 'done' || st?.type === 'closed'
+    // relocate to another list on completion (kept within the same space → status set stays valid)
+    const movingTo = !isNew && nowDone && !wasDone && f.move_to_list && f.move_to_list !== listId ? f.move_to_list : null
     const payload = {
-      list_id: listId, name: f.name.trim(), description: f.description || null,
+      list_id: movingTo || listId, name: f.name.trim(), description: f.description || null,
       status_id: f.status_id, priority: f.priority || null,
       start_date: f.start_date || null, due_date: f.due_date || null,
       time_estimate: f.time_estimate ? Number(f.time_estimate) : null,
       tags: f.tags, checklist: f.checklist, custom: f.custom, recurrence: recRule,
-      completed_at: (st?.type === 'done' || st?.type === 'closed') ? new Date().toISOString() : null,
+      move_to_list: f.move_to_list || null,
+      completed_at: nowDone ? new Date().toISOString() : null,
     }
     let id = task.id
     if (isNew) {
@@ -138,8 +147,6 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
     }
     if (acts.length) await api.logActivity(acts.map((a) => ({ ...a, task_id: id, actor_id: user.id })))
     // recurring: completing a repeating task spawns its next instance
-    const wasDone = (() => { const ty = statuses.find((s) => s.id === task.status_id)?.type; return ty === 'done' || ty === 'closed' })()
-    const nowDone = st?.type === 'done' || st?.type === 'closed'
     if (nowDone && !wasDone) playDone()                                // completion chime
     if (!isNew && recRule && nowDone && !wasDone) {
       await api.rollRecurringTask({
@@ -204,6 +211,16 @@ export default function TaskModal({ task, listId, statuses, members, fields = []
         </div>
         {f.recur_freq && <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 5 }}>Completing this task creates the next one with dates moved forward.</div>}
       </div>
+
+      {moveOptions.length > 0 && (
+        <div className="field"><label>➡️ When done, move to</label>
+          <select value={f.move_to_list} onChange={set('move_to_list')}>
+            <option value="">— Stay in this list —</option>
+            {moveOptions.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
+          {f.move_to_list && <div style={{ fontSize: 11.5, color: 'var(--mut2)', marginTop: 5 }}>Completing this task moves it to the selected list.</div>}
+        </div>
+      )}
 
       <div className="field"><label>Assignees</label>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

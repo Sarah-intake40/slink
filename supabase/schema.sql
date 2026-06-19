@@ -95,6 +95,7 @@ create table tasks (
   checklist   jsonb default '[]'::jsonb,
   time_estimate int,                                      -- minutes
   recurrence  jsonb,                                      -- repeat rule, e.g. {"freq":"weekly","interval":1}; null = no repeat
+  move_to_list uuid references lists(id) on delete set null, -- when completed, relocate the task into this List
   sort        int default 0,
   created_by  uuid references profiles(id) on delete set null,
   completed_at timestamptz,

@@ -1,6 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import * as XLSX from 'xlsx'
-import { useAuth } from '../auth'
 import { useWorkspace } from '../workspace'
 import * as api from '../api'
 import { invoiceAmounts, invStatus } from '../finance'
@@ -27,23 +26,31 @@ const STR = {
   currentWorks: { en: 'Current works', ar: 'أعمال المستخلص' }, totalDue: { en: 'Total due', ar: 'الإجمالي المستحق' },
   spendByCat: { en: 'Spend by category', ar: 'المصروفات حسب التصنيف' }, none: { en: 'No data.', ar: 'لا توجد بيانات.' },
   printBtn: { en: 'Print / Save PDF', ar: 'طباعة / حفظ PDF' }, excelBtn: { en: 'Download Excel', ar: 'تنزيل Excel' },
+  wordBtn: { en: 'Download Word', ar: 'تنزيل Word' }, columns: { en: 'Columns', ar: 'الأعمدة' },
+  projectName: { en: 'Project name', ar: 'اسم المشروع' },
   reportType: { en: 'Report type', ar: 'نوع التقرير' }, reportTitle: { en: 'Report title', ar: 'عنوان التقرير' },
   language: { en: 'Language', ar: 'اللغة' }, total: { en: 'Total', ar: 'الإجمالي' }, unassigned: { en: 'Unassigned', ar: 'غير مُسند' },
   introPh: { en: 'Write an introduction / notes to appear at the top of the report…', ar: 'اكتب مقدمة أو ملاحظات تظهر في بداية التقرير…' },
 }
 
 const m2 = (v) => 'SAR ' + (Number(v) || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+const repInput = { flex: 1, minWidth: 0, border: '1px solid var(--line2)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--ink)', background: 'var(--card)' }
+
+const DEFAULT_TASK_COLS = ['task', 'list', 'status', 'assignee', 'start', 'due']
 
 export default function ReportsPage() {
-  const { profile } = useAuth()
   const { ws, spaces, lists, members } = useWorkspace()
   const [type, setType] = useState('daily')
   const [lang, setLang] = useState('en')
   const [intro, setIntro] = useState('')
   const [customTitle, setCustomTitle] = useState('')   // user-overridable report title
+  const [projectName, setProjectName] = useState('')   // manual project name (falls back to workspace name)
+  const [repDate, setRepDate] = useState('')           // manual report date (falls back to today)
+  const [taskCols, setTaskCols] = useState(DEFAULT_TASK_COLS)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const t = (k) => STR[k]?.[lang] ?? k
+  const toggleCol = (k) => setTaskCols((c) => c.includes(k) ? (c.length > 1 ? c.filter((x) => x !== k) : c) : [...c, k])
 
   const load = useCallback(async () => {
     if (!ws) return
@@ -87,21 +94,38 @@ export default function ReportsPage() {
   const overdue = data.tasks.filter((x) => x.due_date && String(x.due_date).slice(0, 10) < today && !isDone(x.status_id)).length
 
   const title = customTitle.trim() || t(type)
+  const proj = projectName.trim() || ws?.name || ''
+  const dateStr = fmtDate(repDate || today)
+
+  // task-table columns the user can toggle on/off (used by the on-screen report, Excel and Word)
+  const ALL_TASK_COLS = [
+    { k: 'task', label: t('task'), get: (x) => x.name },
+    { k: 'list', label: t('list'), get: (x) => listOf(x.list_id)?.name || '—' },
+    { k: 'status', label: t('status'), get: (x) => statusOf(x.status_id)?.name || '—', status: true },
+    { k: 'assignee', label: t('assignee'), get: (x) => x.assignees.map(nameOf).filter(Boolean).join(', ') || t('unassigned') },
+    { k: 'priority', label: t('priority'), get: (x) => x.priority || '—' },
+    { k: 'start', label: t('start'), get: (x) => fmtDate(x.start_date) || '—' },
+    { k: 'due', label: t('due'), get: (x) => fmtDate(x.due_date) || '—' },
+  ]
+  const cols = ALL_TASK_COLS.filter((c) => taskCols.includes(c.k))
 
   const TasksTable = () => (
     <table className="rep-tbl"><thead><tr>
-      <th>{t('task')}</th><th>{t('list')}</th><th>{t('status')}</th><th>{t('assignee')}</th><th>{t('start')}</th><th>{t('due')}</th>
+      {cols.map((c) => <th key={c.k}>{c.label}</th>)}
     </tr></thead><tbody>
       {data.tasks.map((x) => {
         const s = statusOf(x.status_id)
         return <tr key={x.id}>
-          <td>{x.name}</td><td>{listOf(x.list_id)?.name || '—'}</td>
-          <td>{s ? <span className="rep-pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : '—'}</td>
-          <td>{x.assignees.map(nameOf).filter(Boolean).join(', ') || t('unassigned')}</td>
-          <td>{fmtDate(x.start_date) || '—'}</td><td>{fmtDate(x.due_date) || '—'}</td>
+          {cols.map((c) => (
+            <td key={c.k}>
+              {c.status
+                ? (s ? <span className="rep-pill" style={{ background: s.color + '22', color: s.color }}>{s.name}</span> : '—')
+                : c.get(x)}
+            </td>
+          ))}
         </tr>
       })}
-      {!data.tasks.length && <tr><td colSpan={6} style={{ textAlign: 'center', color: '#888' }}>{t('none')}</td></tr>}
+      {!data.tasks.length && <tr><td colSpan={cols.length} style={{ textAlign: 'center', color: '#888' }}>{t('none')}</td></tr>}
     </tbody></table>
   )
 
@@ -154,9 +178,8 @@ export default function ReportsPage() {
 
     const meta = [
       [title],
-      [t('projectLabel'), ws?.name || ''],
-      [t('date'), fmtDate(today)],
-      [t('preparedBy'), profile?.full_name || ''],
+      [t('projectLabel'), proj],
+      [t('date'), dateStr],
     ]
     if (intro.trim()) meta.push([t('intro'), intro.trim()])
 
@@ -167,12 +190,8 @@ export default function ReportsPage() {
         [t('overdue'), overdue], [t('progress'), prog + '%'],
       ])
       add(t('tasks'), [
-        [t('task'), t('list'), t('status'), t('assignee'), t('start'), t('due')],
-        ...data.tasks.map((x) => [
-          x.name, listOf(x.list_id)?.name || '', statusOf(x.status_id)?.name || '',
-          x.assignees.map(nameOf).filter(Boolean).join(', ') || t('unassigned'),
-          fmtDate(x.start_date) || '', fmtDate(x.due_date) || '',
-        ]),
+        cols.map((c) => c.label),
+        ...data.tasks.map((x) => cols.map((c) => c.get(x))),
       ])
     }
 
@@ -202,7 +221,57 @@ export default function ReportsPage() {
     }
 
     const safeFile = (s) => (s || 'report').replace(/[\\/:*?"<>|]/g, '').slice(0, 80)
-    XLSX.writeFile(wb, `${safeFile(ws?.name)} - ${safeFile(title)}.xlsx`)
+    XLSX.writeFile(wb, `${safeFile(proj)} - ${safeFile(title)}.xlsx`)
+  }
+
+  // Export the report as a Word .doc (HTML-based; opens in Word). RTL body for Arabic.
+  function exportWord() {
+    const rtl = lang === 'ar'
+    const esc = (v) => String(v ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+    const align = rtl ? 'right' : 'left'
+    const sec = (h, inner) => `<h2 style="font-size:14pt;color:#7B68EE;border-bottom:2px solid #7B68EE;padding-bottom:4px;margin:18px 0 8px">${esc(h)}</h2>${inner}`
+    const table = (headers, rows) => `<table border="1" cellspacing="0" cellpadding="6" style="border-collapse:collapse;width:100%;font-size:10pt">`
+      + `<thead><tr style="background:#f0eefe">${headers.map((h) => `<th style="text-align:${align};border:1px solid #ccc;padding:6px">${esc(h)}</th>`).join('')}</tr></thead>`
+      + `<tbody>${rows.map((r) => `<tr>${r.map((c) => `<td style="border:1px solid #ccc;padding:6px">${esc(c)}</td>`).join('')}</tr>`).join('')}</tbody></table>`
+
+    let body = `<div style="border-bottom:3px solid #7B68EE;padding-bottom:8px;margin-bottom:8px">`
+      + `<div style="font-size:9pt;color:#7B68EE;font-weight:bold;text-transform:uppercase">${esc(t('projectLabel'))}</div>`
+      + `<h1 style="font-size:20pt;margin:2px 0">${esc(proj)}</h1>`
+      + `<div style="font-size:10pt;color:#555"><b>${esc(title)}</b> — ${esc(t('date'))}: ${esc(dateStr)}</div></div>`
+
+    if (intro.trim()) body += sec(t('intro'), `<p style="font-size:11pt;line-height:1.6;white-space:pre-wrap">${esc(intro.trim())}</p>`)
+
+    if (type === 'daily' || type === 'project') {
+      body += sec(t('summary'), table(
+        [t('totalTasks'), t('completed'), t('inProgress'), t('overdue'), t('progress')],
+        [[total, done, active, overdue, prog + '%']]))
+      body += sec(t('tasks'), table(cols.map((c) => c.label), data.tasks.map((x) => cols.map((c) => c.get(x)))))
+    }
+
+    if ((type === 'budget' || type === 'project') && fin) {
+      const totalSpent = data.expenses.reduce((a, e) => a + num(e.amount), 0)
+      body += sec(t('financial'), table(
+        [t('budgetL'), t('spent'), t('remaining'), t('claimed'), t('received'), t('outstanding')],
+        [[m2(fin.budget), m2(fin.spent), m2(fin.remaining), m2(fin.claimed), m2(fin.received), m2(fin.outstanding)]]))
+      body += sec(t('spendByCat'), table([t('category'), t('amount'), '%'],
+        data.cats.map((c) => { const sp = data.expenses.filter((e) => e.category_id === c.id).reduce((a, e) => a + num(e.amount), 0); return [c.name, m2(sp), (totalSpent ? Math.round(sp / totalSpent * 100) : 0) + '%'] })))
+      body += sec(t('expenses'), table([t('date'), t('category'), t('description'), t('amount')],
+        [...data.expenses.map((e) => [fmtDate(e.spent_on), catOf(e.category_id)?.name || '', e.description || '', m2(e.amount)]), [t('total'), '', '', m2(totalSpent)]]))
+      body += sec(t('invoices'), table([t('no'), t('date'), t('currentWorks'), t('totalDue'), t('status')],
+        data.invoices.map((i) => { const a = invoiceAmounts(i), s = invStatus(i.status); return [i.seq, fmtDate(i.invoice_date), m2(a.current), m2(a.totalDue), rtl ? s.ar : s.en] })))
+    }
+
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40">`
+      + `<head><meta charset="utf-8"><title>${esc(title)}</title></head>`
+      + `<body dir="${rtl ? 'rtl' : 'ltr'}" style="font-family:${rtl ? "'Segoe UI',Tahoma" : 'Calibri,Arial'},sans-serif;color:#1f2d3d">${body}</body></html>`
+
+    const safeFile = (s) => (s || 'report').replace(/[\\/:*?"<>|]/g, '').slice(0, 80)
+    const blob = new Blob(['﻿', html], { type: 'application/msword' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `${safeFile(proj)} - ${safeFile(title)}.doc`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
   }
 
   return (
@@ -211,6 +280,7 @@ export default function ReportsPage() {
         <div className="list-head">
           <div><div className="crumb">Reports · التقارير</div><h2>Reports</h2></div>
           <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+            <button className="btn ghost" onClick={exportWord}>⬇ {t('wordBtn')}</button>
             <button className="btn ghost" onClick={exportExcel}>⬇ {t('excelBtn')}</button>
             <button className="btn" onClick={() => window.print()}>🖨 {t('printBtn')}</button>
           </div>
@@ -226,10 +296,26 @@ export default function ReportsPage() {
             <select value={lang} onChange={(e) => setLang(e.target.value)}>
               <option value="en">English</option><option value="ar">العربية</option>
             </select></label>
-          <label className="vc-ctl" style={{ flex: '1 1 220px' }}><span>{t('reportTitle')}</span>
+          {(type === 'daily' || type === 'project') && (
+            <details className="vc-ctl rep-colpicker">
+              <summary>{t('columns')} ({cols.length})</summary>
+              <div className="rep-colmenu">
+                {ALL_TASK_COLS.map((c) => (
+                  <label key={c.k}><input type="checkbox" checked={taskCols.includes(c.k)} onChange={() => toggleCol(c.k)} /> {c.label}</label>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+        <div className="vc" style={{ borderBottom: 'none', marginTop: -6 }}>
+          <label className="vc-ctl" style={{ flex: '1 1 200px' }}><span>{t('projectName')}</span>
+            <input value={projectName} onChange={(e) => setProjectName(e.target.value)} placeholder={ws?.name || ''}
+              dir={lang === 'ar' ? 'rtl' : 'ltr'} style={repInput} /></label>
+          <label className="vc-ctl"><span>{t('date')}</span>
+            <input type="date" value={repDate} onChange={(e) => setRepDate(e.target.value)} style={repInput} /></label>
+          <label className="vc-ctl" style={{ flex: '1 1 200px' }}><span>{t('reportTitle')}</span>
             <input value={customTitle} onChange={(e) => setCustomTitle(e.target.value)} placeholder={t(type)}
-              dir={lang === 'ar' ? 'rtl' : 'ltr'}
-              style={{ flex: 1, minWidth: 0, border: '1px solid var(--line2)', borderRadius: 8, padding: '6px 9px', fontSize: 12.5, color: 'var(--ink)', background: 'var(--card)' }} /></label>
+              dir={lang === 'ar' ? 'rtl' : 'ltr'} style={repInput} /></label>
         </div>
         <textarea className="rep-intro-input" rows={3} value={intro} onChange={(e) => setIntro(e.target.value)} placeholder={t('introPh')} dir={lang === 'ar' ? 'rtl' : 'ltr'} />
       </div>
@@ -239,12 +325,11 @@ export default function ReportsPage() {
         <div className="rep-head">
           <div>
             <div className="rep-kicker">{t('projectLabel')}</div>
-            <h1>{ws?.name}</h1>
+            <h1>{proj}</h1>
           </div>
           <div className="rep-meta">
             <div className="rep-title">{title}</div>
-            <div>{t('date')}: {fmtDate(today)}</div>
-            <div>{t('preparedBy')}: {profile?.full_name || '—'}</div>
+            <div>{t('date')}: {dateStr}</div>
           </div>
         </div>
 
@@ -278,7 +363,7 @@ export default function ReportsPage() {
           </>
         )}
 
-        <div className="rep-foot">S Link · {ws?.name} · {t('generated')}: {new Date().toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</div>
+        <div className="rep-foot">S Link · {proj} · {t('generated')}: {new Date().toLocaleString(lang === 'ar' ? 'ar-EG' : 'en-GB')}</div>
       </div>
     </>
   )
