@@ -28,6 +28,8 @@ const STR = {
   printBtn: { en: 'Print / Save PDF', ar: 'طباعة / حفظ PDF' }, excelBtn: { en: 'Download Excel', ar: 'تنزيل Excel' },
   wordBtn: { en: 'Download Word', ar: 'تنزيل Word' }, columns: { en: 'Columns', ar: 'الأعمدة' },
   sections: { en: 'Sections', ar: 'الأقسام' }, projectName: { en: 'Project name', ar: 'اسم المشروع' },
+  sortBy: { en: 'Sort tasks by', ar: 'ترتيب المهام حسب' }, byName: { en: 'Name (A–Z)', ar: 'الاسم (أ–ي)' },
+  byNone: { en: 'Default order', ar: 'الترتيب الافتراضي' },
   reportType: { en: 'Report type', ar: 'نوع التقرير' }, reportTitle: { en: 'Report title', ar: 'عنوان التقرير' },
   language: { en: 'Language', ar: 'اللغة' }, total: { en: 'Total', ar: 'الإجمالي' }, unassigned: { en: 'Unassigned', ar: 'غير مُسند' },
   introPh: { en: 'Write an introduction / notes to appear at the top of the report…', ar: 'اكتب مقدمة أو ملاحظات تظهر في بداية التقرير…' },
@@ -49,6 +51,7 @@ export default function ReportsPage() {
   const [taskCols, setTaskCols] = useState(DEFAULT_TASK_COLS)
   const [hiddenSecs, setHiddenSecs] = useState([])     // report sections the user has hidden
   const [showDate, setShowDate] = useState(true)       // whether to print the date on the report
+  const [taskSort, setTaskSort] = useState('status')   // how the report's task list is arranged
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const t = (k) => STR[k]?.[lang] ?? k
@@ -124,11 +127,20 @@ export default function ReportsPage() {
   ]
   const typeSections = SECTIONS.filter((s) => s.types.includes(type))
 
+  // arrange the report's task list (status order / name A–Z / list name / default)
+  const statusRank = (id) => { const i = data.statuses.findIndex((s) => s.id === id); return i === -1 ? 999 : i }
+  const sortedTasks = [...data.tasks].sort((a, b) => {
+    if (taskSort === 'name') return (a.name || '').localeCompare(b.name || '')
+    if (taskSort === 'list') return (listOf(a.list_id)?.name || '').localeCompare(listOf(b.list_id)?.name || '')
+    if (taskSort === 'status') return statusRank(a.status_id) - statusRank(b.status_id)
+    return 0
+  })
+
   const TasksTable = () => (
     <table className="rep-tbl"><thead><tr>
       {cols.map((c) => <th key={c.k}>{c.label}</th>)}
     </tr></thead><tbody>
-      {data.tasks.map((x) => {
+      {sortedTasks.map((x) => {
         const s = statusOf(x.status_id)
         return <tr key={x.id}>
           {cols.map((c) => (
@@ -206,7 +218,7 @@ export default function ReportsPage() {
       ])
       if (show('tasks')) add(t('tasks'), [
         cols.map((c) => c.label),
-        ...data.tasks.map((x) => cols.map((c) => c.get(x))),
+        ...sortedTasks.map((x) => cols.map((c) => c.get(x))),
       ])
     }
 
@@ -260,7 +272,7 @@ export default function ReportsPage() {
       if (show('summary')) body += sec(t('summary'), table(
         [t('totalTasks'), t('completed'), t('inProgress'), t('overdue'), t('progress')],
         [[total, done, active, overdue, prog + '%']]))
-      if (show('tasks')) body += sec(t('tasks'), table(cols.map((c) => c.label), data.tasks.map((x) => cols.map((c) => c.get(x)))))
+      if (show('tasks')) body += sec(t('tasks'), table(cols.map((c) => c.label), sortedTasks.map((x) => cols.map((c) => c.get(x)))))
     }
 
     if ((type === 'budget' || type === 'project') && fin) {
@@ -328,6 +340,15 @@ export default function ReportsPage() {
                 ))}
               </div>
             </details>
+          )}
+          {(type === 'daily' || type === 'project') && show('tasks') && (
+            <label className="vc-ctl"><span>{t('sortBy')}</span>
+              <select value={taskSort} onChange={(e) => setTaskSort(e.target.value)}>
+                <option value="status">{t('status')}</option>
+                <option value="name">{t('byName')}</option>
+                <option value="list">{t('list')}</option>
+                <option value="none">{t('byNone')}</option>
+              </select></label>
           )}
         </div>
         <div className="vc" style={{ borderBottom: 'none', marginTop: -6 }}>
